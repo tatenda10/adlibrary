@@ -1,0 +1,26 @@
+{
+  "name": "viraladlibrary-server",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "nodemon index.js",
+    "start": "node index.js",
+    "db:setup": "node db/setup.js",
+    "db:migrate-workspace": "node db/migrate-tiktok-workspace.js",
+    "db:migrate-social-workspace": "node db/migrate-social-workspace.js",
+    "admin:seed": "node db/seedAdmin.js"
+  },
+  "dependencies": {
+    "@clerk/backend": "^1.33.1",
+    "@google/generative-ai": "^0.22.0",
+    "apify-client": "^2.12.5",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.2",
+    "mysql2": "^3.14.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}

@@ -1,0 +1,53 @@
+/** Same copy as homepage `#pricing` — keep in sync when marketing updates. */
+export const PRICING_PLANS = [
+  {
+    key: 'starter',
+    name: 'Starter',
+    price: '49',
+    description: 'Core research access for solo marketers and lean teams.',
+    features: [
+      'Cross-platform ad library access',
+      'Core search filters',
+      'Saved research workspace',
+      'Starter research workflow',
+      'Fair-use monthly quotas',
+    ],
+    cta: 'Choose Starter',
+    footnote: 'Best for focused research teams',
+    popular: false,
+  },
+  {
+    key: 'pro',
+    name: 'Pro',
+    price: '99',
+    description: 'For teams that want advanced AI workflows, scoring, and premium research tools.',
+    features: [
+      'Everything in Starter',
+      'Advanced AI search',
+      'Virality prediction and analysis',
+      'CRO audit and premium workflows',
+      'Priority research tooling',
+      'Higher fair-use monthly quotas',
+    ],
+    cta: 'Get Pro',
+    footnote: 'Best for in-house growth teams',
+    popular: true,
+  },
+  {
+    key: 'agency',
+    name: 'Agency',
+    price: '299',
+    description: 'For teams managing multiple brands and sharing insights with clients.',
+    features: [
+      'Everything in Pro',
+      '5 team seats',
+      'White-label reports',
+      'API access',
+      'Dedicated account manager',
+      'Highest fair-use monthly quotas',
+    ],
+    cta: 'Talk to Sales',
+    footnote: 'Built for agencies and operators',
+    popular: false,
+  },
+];
