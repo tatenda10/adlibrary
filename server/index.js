@@ -33,15 +33,22 @@ const defaultCorsOrigins = [
   process.env.CLIENT_ORIGIN || 'http://localhost:5173',
   'http://localhost:5174',
 ];
-const corsOrigins = process.env.CORS_ORIGINS
+const configuredCorsOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
-  : defaultCorsOrigins;
+  : [];
+const corsOrigins = [...new Set([...defaultCorsOrigins, ...configuredCorsOrigins])];
 
 const app = express();
 
 app.use(
   cors({
-    origin: corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins,
+    origin(origin, callback) {
+      if (!origin || corsOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
     credentials: true,
   })
 );

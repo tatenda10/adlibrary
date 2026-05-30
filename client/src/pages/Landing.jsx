@@ -106,47 +106,37 @@ const FALLBACK_VIDEO_SHOWCASE = [
 
 const TESTIMONIALS = [
   {
-    quote: 'Before ViralAdLibrary, our Monday planning meetings were chaos. Now we come in with examples, agree on angles quickly, and our creative team actually enjoys the process again.',
+    quote: 'Before this, our Monday planning calls were honestly a mess. Now we walk in with examples everyone can react to, pick a direction faster, and stop going in circles.',
     name: 'Thandiwe Moyo',
     role: 'Performance Marketing Lead',
-    company: 'Takealot',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80',
     tags: ['DTC', 'Creative Ops'],
     score: '5.0',
   },
   {
-    quote: 'It gave us a shared language with our designers. Instead of saying "make it punchier", we show references and ship better concepts on the first pass.',
+    quote: 'The biggest change was how much easier feedback became. Instead of vague comments like "make it stronger," we can point to references and the first round is usually much closer.',
     name: 'Liam Carter',
     role: 'Creative Strategy Manager',
-    company: 'Canva',
-    avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=300&q=80',
     tags: ['Agency', 'Planning'],
     score: '5.0',
   },
   {
-    quote: 'The saved collections alone changed our workflow. We stopped dropping random screenshots in Slack and started making decisions faster as a team.',
+    quote: 'Saved collections ended up being the thing our team used most. We stopped dumping random screenshots in Slack and started keeping ideas in one place we could actually come back to.',
     name: 'Marcus Johnson',
     role: 'Senior Growth Manager',
-    company: 'HubSpot',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80',
     tags: ['SaaS', 'Reporting'],
     score: '5.0',
   },
   {
-    quote: 'As a founder, I finally feel confident in what good ad creative looks like. We wasted less money on weak ideas and improved our first-week results.',
+    quote: 'As a founder, I mostly wanted fewer expensive guesses. This helped me spot stronger creative ideas earlier, and we wasted a lot less money testing things that were never going to land.',
     name: 'Sophie Dubois',
     role: 'Founder',
-    company: 'Decathlon',
-    avatar: 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?auto=format&fit=crop&w=300&q=80',
     tags: ['E-commerce', 'Launch'],
     score: '4.9',
   },
   {
-    quote: 'We manage multiple clients and this made cross-channel research much less painful. It is now part of our weekly strategy routine.',
+    quote: 'We juggle multiple clients, so research can get messy fast. This made the weekly strategy pass feel a lot lighter and gave the team a cleaner starting point every time.',
     name: 'Ethan Walker',
     role: 'Media Buying Director',
-    company: 'WPP',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
     tags: ['Media Buying', 'Scale'],
     score: '5.0',
   },
@@ -457,6 +447,7 @@ function Landing() {
         </div>
       </section>
 
+      {/*
       <section id="how-it-works" className="border-b border-white/8 bg-[#050505] py-14">
         <div className="mx-auto w-full max-w-[1280px] px-4 md:px-6">
           <div className="max-w-2xl">
@@ -482,6 +473,7 @@ function Landing() {
           </div>
         </div>
       </section>
+      */}
 
       <section id="features" className="border-b border-white/8 bg-black py-16">
         <div className="mx-auto w-full max-w-[1280px] px-4 md:px-6">
@@ -550,11 +542,13 @@ function Landing() {
                 key={person.name}
                 type="button"
                 onClick={() => setTestimonialIndex(index)}
-                className={`h-11 w-11 overflow-hidden rounded-full border transition ${
-                  index === testimonialIndex ? 'scale-110 border-emerald-300 ring-2 ring-emerald-400/40' : 'border-white/25 opacity-80 hover:opacity-100'
+                className={`rounded-full border px-4 py-2 text-left transition ${
+                  index === testimonialIndex
+                    ? 'scale-105 border-emerald-300 bg-emerald-400/10 text-white ring-2 ring-emerald-400/30'
+                    : 'border-white/15 bg-white/[0.03] text-slate-300 hover:border-white/30 hover:text-white'
                 }`}
               >
-                <img src={person.avatar} alt={person.name} className="h-full w-full object-cover" />
+                <span className="block text-sm font-semibold">{person.name}</span>
               </button>
             ))}
           </div>
@@ -563,11 +557,13 @@ function Landing() {
             <TestimonialSideCard item={previousTestimonial} />
             <article className="rounded-2xl border border-emerald-400/35 bg-gradient-to-b from-[#1a1413] to-[#110f0f] p-6 shadow-[0_14px_36px_rgba(0,0,0,0.38)]">
               <div className="flex items-center gap-3">
-                <img src={currentTestimonial.avatar} alt={currentTestimonial.name} className="h-12 w-12 rounded-full object-cover ring-2 ring-emerald-400/40" />
+                <div className="grid h-12 w-12 place-items-center rounded-full border border-emerald-400/35 bg-emerald-400/10 text-sm font-bold text-emerald-200">
+                  {getInitials(currentTestimonial.name)}
+                </div>
                 <div>
                   <p className="text-lg font-semibold text-white">{currentTestimonial.name}</p>
                   <p className="text-xs uppercase tracking-[0.14em] text-slate-400">
-                    {currentTestimonial.role} • {currentTestimonial.company}
+                    {currentTestimonial.role}
                   </p>
                 </div>
               </div>
@@ -843,15 +839,26 @@ function TestimonialSideCard({ item }) {
   return (
     <article className="hidden rounded-2xl border border-white/10 bg-white/[0.02] p-5 opacity-45 blur-[0.2px] md:block">
       <div className="flex items-center gap-3">
-        <img src={item.avatar} alt={item.name} className="h-10 w-10 rounded-full object-cover" />
+        <div className="grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-white/[0.04] text-xs font-bold text-slate-200">
+          {getInitials(item.name)}
+        </div>
         <div>
           <p className="text-sm font-semibold text-white">{item.name}</p>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">{item.company}</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">{item.role}</p>
         </div>
       </div>
       <p className="mt-4 line-clamp-4 text-sm text-slate-300">"{item.quote}"</p>
     </article>
   );
+}
+
+function getInitials(name) {
+  return String(name || '')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('');
 }
 
 function ArrowLeftIcon() {
@@ -1231,3 +1238,4 @@ function inferNicheFromText(value) {
 }
 
 export default Landing;
+

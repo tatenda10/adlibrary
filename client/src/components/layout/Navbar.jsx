@@ -14,7 +14,7 @@ function Navbar() {
           <a href="#library" className="text-[#25d366]">Library</a>
           <a href="#features" className="hover:text-white">Features</a>
           <a href="#pricing" className="hover:text-white">Pricing</a>
-          <a href="#how-it-works" className="hover:text-white">How it works</a>
+          {/* <a href="#how-it-works" className="hover:text-white">How it works</a> */}
         </nav>
 
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
