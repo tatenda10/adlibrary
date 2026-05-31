@@ -1,8 +1,8 @@
 import { getUserFacingError } from './userFacingError.js';
 
-const configuredApiUrl = String(import.meta.env.VITE_API_BASE_URL || '').trim();
+export const API_URL =  'https://viraladlibrary.space';
 
-export const API_URL = configuredApiUrl || 'https://viraladlibrary.space';
+//export const API_URL = 'http://localhost:5000';
 
 function isApifyArtifactUrl(value) {
   const raw = String(value || '').toLowerCase();

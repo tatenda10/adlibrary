@@ -721,7 +721,7 @@ function Landing() {
               <div className="mt-3 space-y-2 text-sm text-slate-300">
                 <a href="mailto:sales@viraladlbrary.site" className="block hover:text-white">sales@viraladlbrary.site</a>
                 <a href="mailto:support@viraladlbrary.site" className="block hover:text-white">support@viraladlbrary.site</a>
-                <a href="tel:+263771472707" className="block hover:text-white">Calls/WhatsApp: +26377472707</a>
+                <a href="tel:+263771472707" className="block hover:text-white">Calls/WhatsApp: +263771472707</a>
                 <p className="pt-2 text-xs text-slate-500">Built for marketers, agencies, and performance teams.</p>
               </div>
             </div>
@@ -920,6 +920,9 @@ function OfferModal({ onClose }) {
             </div>
             <p className="mt-4 text-xs text-slate-300">
               Popular launch deal: <span className="font-semibold text-white">30% off Pro</span>
+            </p>
+            <p className="mt-2 text-xs text-slate-300">
+              Promo code: <span className="rounded-full border border-emerald-300/35 bg-black/35 px-2 py-1 font-bold tracking-[0.14em] text-emerald-200">EARLYBIRD</span>
             </p>
           </div>
         </div>

@@ -32,6 +32,7 @@ const pool = require('./db/connection');
 const defaultCorsOrigins = [
   process.env.CLIENT_ORIGIN || 'http://localhost:5173',
   'http://localhost:5174',
+  'https://www.viraladlibrary.site',
 ];
 const configuredCorsOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
