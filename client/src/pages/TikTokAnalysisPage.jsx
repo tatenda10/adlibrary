@@ -120,10 +120,16 @@ function TikTokAnalysisPage() {
         </div>
       ) : null}
 
+      {analysis?.preview ? (
+        <div className="rounded-md border border-sky-500/25 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+          {analysis.preview_notice || 'This is a free analysis preview. Upgrade to unlock the full breakdown.'}
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.16em] app-muted">AI Analysis</p>
-          <h2 className="mt-1 text-2xl font-semibold">Full Breakdown</h2>
+          <h2 className="mt-1 text-2xl font-semibold">{analysis?.preview ? 'Preview Breakdown' : 'Full Breakdown'}</h2>
         </div>
 
         <div className="flex flex-wrap gap-2">

@@ -6,6 +6,7 @@ const { ensureUser } = require('../utils/users');
 const TIKTOK_DISCOVERY_ACTOR_ID = process.env.APIFY_TIKTOK_ACTOR || 'clockworks/tiktok-scraper';
 const TIKTOK_PROFILE_ACTOR_ID =
   process.env.APIFY_TIKTOK_PROFILE_ACTOR || 'clockworks/tiktok-profile-scraper';
+const FREE_RESULT_LIMIT = 8;
 
 function pickFirst(...values) {
   for (const value of values) {
@@ -450,6 +451,12 @@ function normalizeSearchNumber(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+function resolveSearchResultLimit(subscription, requestedLimit, paidFallback = 20) {
+  const paidLimit = Math.min(Number(requestedLimit) || paidFallback, 50);
+  if (subscription?.is_active) return paidLimit;
+  return Math.min(paidLimit, FREE_RESULT_LIMIT);
+}
+
 function normalizeTikTokSearchOptions(raw = {}) {
   return {
     minViews: normalizeSearchNumber(raw.minViews),
@@ -711,13 +718,18 @@ async function searchTikTok(req, res) {
       return res.status(400).json({ error: 'keyword is required' });
     }
 
-    const data = await fetchTikTokResults(keyword, limit, {
+    const effectiveLimit = resolveSearchResultLimit(req.subscription, limit, 20);
+    const data = await fetchTikTokResults(keyword, effectiveLimit, {
       minViews,
       minLikes,
       hookContains,
       hookMode,
       prompt: String(keyword).trim(),
     });
+    data.results = Array.isArray(data.results) ? data.results.slice(0, effectiveLimit) : [];
+    if (data.plan) {
+      data.plan.free_tier_result_cap = !req.subscription?.is_active ? effectiveLimit : null;
+    }
     return res.json(data);
   } catch (error) {
     console.error('searchTikTok error:', error);

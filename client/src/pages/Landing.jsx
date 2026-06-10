@@ -678,6 +678,62 @@ function Landing() {
         </div>
       </section>
 
+      <section className="border-t border-white/8 bg-[radial-gradient(circle_at_20%_10%,rgba(34,197,94,0.1),transparent_32%),linear-gradient(180deg,#040404_0%,#060606_100%)] py-16">
+        <div className="mx-auto w-full max-w-[1280px] px-4 md:px-6">
+          <div className="grid gap-8 rounded-sm border border-white/10 bg-white/[0.03] p-6 md:p-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Book A Demo</p>
+              <h2 className="mt-2 max-w-2xl text-3xl font-semibold text-white">
+                Want to see how your team would actually use ViralAdLibrary?
+              </h2>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">
+                Book a live walkthrough and we’ll show you how to research competitors, organize examples into workspace folders, and turn findings into clearer creative decisions.
+              </p>
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-sm border border-white/10 bg-black/25 p-4">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-300">Live Workflow</p>
+                  <p className="mt-2 text-sm text-slate-300">See the real research flow across TikTok, Facebook, and Instagram.</p>
+                </div>
+                <div className="rounded-sm border border-white/10 bg-black/25 p-4">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-300">Team Fit</p>
+                  <p className="mt-2 text-sm text-slate-300">Figure out which plan, workflow, and setup makes sense for your team.</p>
+                </div>
+                <div className="rounded-sm border border-white/10 bg-black/25 p-4">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-300">Q&A</p>
+                  <p className="mt-2 text-sm text-slate-300">Get direct answers on use cases, onboarding, and how to roll it out.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-sm border border-emerald-400/25 bg-emerald-400/[0.06] p-6">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-emerald-300">30-Minute Session</p>
+              <h3 className="mt-2 text-2xl font-semibold text-white">Schedule a product walkthrough</h3>
+              <p className="mt-3 text-sm leading-6 text-slate-300">
+                Best for agencies, performance teams, and founders who want to see the platform in action before committing.
+              </p>
+
+              <div className="mt-6 flex flex-col gap-3">
+                <a
+                  href="https://calendly.com/tatendamuzenda740/30min"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center rounded-sm bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-emerald-300"
+                >
+                  Book Your Demo
+                </a>
+                <a
+                  href="mailto:sales@viraladlibrary.com?subject=Demo%20Request"
+                  className="inline-flex items-center justify-center rounded-sm border border-white/15 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08]"
+                >
+                  Prefer Email?
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <footer className="border-t border-white/8 bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.1),transparent_48%),#050505] py-14">
         <div className="mx-auto w-full max-w-[1280px] px-4 md:px-6">
           <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-5">

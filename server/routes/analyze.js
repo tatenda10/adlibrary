@@ -8,10 +8,13 @@ const { METRICS } = require('../utils/usage');
 
 const router = express.Router();
 
-router.post('/', clerkAuth, hydrateSubscription, requireProSubscription, createUsageGuard(METRICS.AI_ANALYSIS, {
+router.post('/', clerkAuth, hydrateSubscription, createUsageGuard(METRICS.AI_ANALYSIS, {
   message: 'You have reached your monthly AI analysis limit.',
   upgradePrompt: 'Upgrade your plan or wait for the next billing cycle to analyze more videos.',
-}), analyzeTikTok);
+}), (req, res, next) => {
+  req.analysisPreview = !req.subscription?.is_active;
+  next();
+}, analyzeTikTok);
 
 router.post('/jobs', clerkAuth, hydrateSubscription, requireProSubscription, createUsageGuard(METRICS.AI_ANALYSIS, {
   message: 'You have reached your monthly AI analysis limit.',

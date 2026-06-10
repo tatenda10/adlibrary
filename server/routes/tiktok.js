@@ -88,34 +88,30 @@ router.post(
   fetchTikTokHotTakes
 );
 
-router.get('/workspace/folders', clerkAuth, hydrateSubscription, requirePaidSubscription, listFolders);
-router.post('/workspace/folders', clerkAuth, hydrateSubscription, requirePaidSubscription, createFolder);
+router.get('/workspace/folders', clerkAuth, hydrateSubscription, listFolders);
+router.post('/workspace/folders', clerkAuth, hydrateSubscription, createFolder);
 router.get(
   '/workspace/folders/:folderId',
   clerkAuth,
   hydrateSubscription,
-  requirePaidSubscription,
   getFolder
 );
 router.delete(
   '/workspace/folders/:folderId',
   clerkAuth,
   hydrateSubscription,
-  requirePaidSubscription,
   deleteFolder
 );
 router.post(
   '/workspace/folders/:folderId/videos',
   clerkAuth,
   hydrateSubscription,
-  requirePaidSubscription,
   addVideoToFolder
 );
 router.delete(
   '/workspace/folders/:folderId/videos/:videoId',
   clerkAuth,
   hydrateSubscription,
-  requirePaidSubscription,
   deleteVideoFromFolder
 );
 

@@ -16,6 +16,7 @@ const VALID_PUBLISHER_PLATFORMS = new Set([
   'audience_network',
 ]);
 const VALID_MEDIA_TYPES = new Set(['all', 'image', 'video', 'memes_and_stickers']);
+const FREE_RESULT_LIMIT = 8;
 
 function pickFirst(...values) {
   for (const value of values) {
@@ -51,6 +52,12 @@ function toArray(value) {
   if (Array.isArray(value)) return value.filter(Boolean);
   if (typeof value === 'string' && value.trim()) return [value.trim()];
   return [];
+}
+
+function resolveFacebookResultLimit(subscription, requestedLimit, fallback = 40) {
+  const paidLimit = clamp(requestedLimit, 1, 100, fallback);
+  if (subscription?.is_active) return paidLimit;
+  return Math.min(paidLimit, FREE_RESULT_LIMIT);
 }
 
 function arrayFromPaths(item, paths = []) {
@@ -1182,6 +1189,7 @@ async function searchFacebookAds(req, res) {
     } = req.body || {};
 
     const trimmedKeyword = String(keyword).trim();
+    const effectiveLimit = resolveFacebookResultLimit(req.subscription, limit, 40);
     const trimmedAdvertiserPageId = String(advertiserPageId || '').trim();
     const mergedPageUrls = dedupeStrings([
       ...(Array.isArray(pageUrls) ? pageUrls : []),
@@ -1199,7 +1207,7 @@ async function searchFacebookAds(req, res) {
         await searchFacebookApifyAds({
           keyword: trimmedKeyword,
           countries,
-          limit,
+          limit: effectiveLimit,
           adType,
           adActiveStatus,
           urls,
@@ -1213,16 +1221,16 @@ async function searchFacebookAds(req, res) {
     }
 
     if (source === 'apify_groups') {
-      return res.json(await searchFacebookGroups({ keyword: trimmedKeyword, limit }));
+      return res.json(await searchFacebookGroups({ keyword: trimmedKeyword, limit: effectiveLimit }));
     }
 
     if (source === 'apify_followers_following') {
-      return res.json(await searchFacebookFollowersFollowing({ keyword: trimmedKeyword, limit }));
+      return res.json(await searchFacebookFollowersFollowing({ keyword: trimmedKeyword, limit: effectiveLimit }));
     }
 
     if (source === 'meta_api') {
       return res.json(
-        await searchMetaGraphAds({ keyword: trimmedKeyword, countries, limit, adType, adActiveStatus })
+        await searchMetaGraphAds({ keyword: trimmedKeyword, countries, limit: effectiveLimit, adType, adActiveStatus })
       );
     }
 

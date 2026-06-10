@@ -1,4 +1,9 @@
 const pool = require('../db/connection');
+const {
+  buildQuotaErrorPayload,
+  getUsageSummaryByUserId,
+  METRICS,
+} = require('../utils/usage');
 
 function parseJsonField(value) {
   if (value == null) return null;
@@ -70,6 +75,16 @@ async function getBookmarks(req, res) {
 async function createBookmark(req, res) {
   try {
     await ensureUser(req.user);
+    const usageSummary = await getUsageSummaryByUserId(req.user.id, req.subscription);
+    const itemQuota = usageSummary?.usage?.[METRICS.WORKSPACE_ITEMS];
+    if (!Number(itemQuota?.limit) || Number(itemQuota?.used) >= Number(itemQuota?.limit)) {
+      return res.status(402).json(
+        buildQuotaErrorPayload(req.subscription, METRICS.WORKSPACE_ITEMS, usageSummary, {
+          message: 'You have reached your saved item limit.',
+          upgrade_prompt: 'Upgrade your plan to save more items.',
+        })
+      );
+    }
 
     const { videoData, aiAnalysis } = req.body;
     const videoUrl = pickFirstUrl(videoData || {});

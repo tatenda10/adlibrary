@@ -1,6 +1,11 @@
 const pool = require('../db/connection');
 const { ensureUser } = require('./users');
 const { toUserFacingError } = require('./userFacingError');
+const {
+  buildQuotaErrorPayload,
+  getUsageSummaryByUserId,
+  METRICS,
+} = require('./usage');
 
 function createWorkspaceController(config) {
   const {
@@ -185,6 +190,16 @@ function createWorkspaceController(config) {
       const name = String(req.body?.name || '').trim();
       if (!name) return res.status(400).json({ error: 'Folder name is required.' });
       if (name.length > 255) return res.status(400).json({ error: 'Folder name is too long.' });
+      const usageSummary = await getUsageSummaryByUserId(req.user.id, req.subscription);
+      const folderQuota = usageSummary?.usage?.[METRICS.WORKSPACE_FOLDERS];
+      if (!Number(folderQuota?.limit) || Number(folderQuota?.used) >= Number(folderQuota?.limit)) {
+        return res.status(402).json(
+          buildQuotaErrorPayload(req.subscription, METRICS.WORKSPACE_FOLDERS, usageSummary, {
+            message: 'You have reached your workspace folder limit.',
+            upgrade_prompt: 'Upgrade your plan to create more workspace folders.',
+          })
+        );
+      }
 
       const [result] = await pool.query(
         `INSERT INTO ${folderTable} (user_id, name) VALUES (?, ?)`,
@@ -255,10 +270,20 @@ function createWorkspaceController(config) {
       await ensureUser(req.user);
       const folder = await getOwnedFolder(req.params.folderId, req.user.id);
       if (!folder) return res.status(404).json({ error: 'Folder not found.' });
+      const usageSummary = await getUsageSummaryByUserId(req.user.id, req.subscription);
+      const itemQuota = usageSummary?.usage?.[METRICS.WORKSPACE_ITEMS];
+      if (!Number(itemQuota?.limit) || Number(itemQuota?.used) >= Number(itemQuota?.limit)) {
+        return res.status(402).json(
+          buildQuotaErrorPayload(req.subscription, METRICS.WORKSPACE_ITEMS, usageSummary, {
+            message: 'You have reached your saved item limit.',
+            upgrade_prompt: 'Upgrade your plan to save more items to workspace folders.',
+          })
+        );
+      }
 
-    const rawUrl = readUrlFromBody(req.body);
-    const contentUrl = await Promise.resolve(normalizeUrl(rawUrl));
-    if (!contentUrl) {
+      const rawUrl = readUrlFromBody(req.body);
+      const contentUrl = await Promise.resolve(normalizeUrl(rawUrl));
+      if (!contentUrl) {
         return res.status(400).json({ error: invalidUrlMessage });
       }
 

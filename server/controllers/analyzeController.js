@@ -220,6 +220,27 @@ function fallbackAnalysis(transcriptInput = '') {
   );
 }
 
+function buildPreviewAnalysis(analysis = {}) {
+  const recommendations = Array.isArray(analysis.recommendations)
+    ? analysis.recommendations.slice(0, 2)
+    : [];
+
+  return {
+    ...analysis,
+    structure: analysis.structure || 'Upgrade to Pro to unlock the full structure breakdown.',
+    viral_factor: 'Upgrade to Pro to see the full viral-factor diagnosis and iteration notes.',
+    content_angle: analysis.content_angle || 'Upgrade to Pro to unlock the full content-angle breakdown.',
+    replication_tips: 'Upgrade to Pro to unlock detailed replication tips and test variations.',
+    estimated_performance: analysis.estimated_performance || 'Upgrade to Pro to see the full performance forecast.',
+    suggested_test_budget_usd: 'Upgrade to Pro for budget guidance.',
+    recommendations: recommendations.length
+      ? recommendations
+      : ['Upgrade to Pro to unlock the complete action plan for this creative.'],
+    preview: true,
+    preview_notice: 'This is a free analysis preview. Upgrade to Pro to unlock the full breakdown.',
+  };
+}
+
 async function analyzeTikTokCore(input = {}) {
   const { videoUrl = '', caption = '', author = '', transcript = '', sourceContext = '' } = input;
   if (!String(videoUrl || '').trim() && !String(sourceContext || '').trim()) {
@@ -273,7 +294,11 @@ async function analyzeTikTokCore(input = {}) {
 
 async function analyzeTikTok(req, res) {
   try {
-    return res.json(await analyzeTikTokCore(req.body || {}));
+    const analysis = await analyzeTikTokCore(req.body || {});
+    if (req.analysisPreview) {
+      return res.json(buildPreviewAnalysis(analysis));
+    }
+    return res.json(analysis);
   } catch (error) {
     console.error('analyzeTikTok error:', error);
     return res.status(500).json({ error: error.message || 'Failed to analyze TikTok video' });

@@ -152,8 +152,17 @@ function OnboardingBilling() {
             Choose the plan that matches your research depth and team needs.
           </h2>
           <p className="mt-3 text-base text-slate-400">
-            Starter and Pro are self-serve. Agency is available through a sales conversation.
+            Start free if you want to explore first. Starter and Pro are self-serve, and Agency is available through a sales conversation.
           </p>
+          <div className="mt-5 flex justify-center">
+            <button
+              type="button"
+              onClick={() => navigate('/app', { replace: true })}
+              className="rounded-sm border border-white/12 px-4 py-2 text-sm font-semibold text-white/85 hover:bg-white/5"
+            >
+              Continue on free plan
+            </button>
+          </div>
         </div>
 
         <div className="mt-10 grid gap-6 md:grid-cols-3">

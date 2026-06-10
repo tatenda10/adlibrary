@@ -1,4 +1,5 @@
 const { ApifyClient } = require('apify-client');
+const FREE_RESULT_LIMIT = 8;
 
 function pickFirst(...values) {
   for (const value of values) {
@@ -15,6 +16,12 @@ function clamp(value, min, max, fallback) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return fallback;
   return Math.min(Math.max(numeric, min), max);
+}
+
+function resolveInstagramResultLimit(subscription, requestedLimit, fallback = 48) {
+  const paidLimit = clamp(requestedLimit, 1, 48, fallback);
+  if (subscription?.is_active) return paidLimit;
+  return Math.min(paidLimit, FREE_RESULT_LIMIT);
 }
 
 function resolveInstagramUrl(query) {
@@ -301,7 +308,8 @@ async function searchInstagram(req, res) {
         error: 'Enter a valid Instagram username or profile URL for standard search. Use Intelligent Search for niche phrases or broad topics.',
       });
     }
-    const data = await fetchInstagramResults(query, limit, source);
+    const effectiveLimit = resolveInstagramResultLimit(req.subscription, limit, 48);
+    const data = await fetchInstagramResults(query, effectiveLimit, source);
     return res.json(data);
   } catch (error) {
     console.error('searchInstagram error:', error);

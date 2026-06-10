@@ -256,14 +256,14 @@ export default function Onboarding() {
     }
   };
 
-  const continueToBilling = () => {
+  const continueToWorkspace = () => {
     completedRef.current = true;
-    trackEvent('onboarding_continue_to_billing', {
+    trackEvent('onboarding_continue_to_workspace', {
       step_index: stepIndex,
       step_key: step.key,
       website_analyzed: websiteAnalyzed,
     });
-    navigate('/onboarding/billing?checkoutPlan=pro', { replace: true });
+    navigate('/app', { replace: true });
   };
 
   const skipWebsiteStep = () => {
@@ -272,7 +272,7 @@ export default function Onboarding() {
       step_index: stepIndex,
       step_key: step.key,
     });
-    navigate('/onboarding/billing?checkoutPlan=pro', { replace: true });
+    navigate('/app', { replace: true });
   };
 
   const onboardingReportMetrics = [
@@ -368,17 +368,17 @@ export default function Onboarding() {
             {profilePreview ? (
               <button
                 type="button"
-                onClick={continueToBilling}
+                onClick={continueToWorkspace}
                 className="w-full rounded-lg bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-black sm:w-auto"
               >
-                Join us
+                Enter workspace
               </button>
             ) : null}
           </div>
           <p className="mt-2 text-sm text-slate-400">
             {isWebsiteStep
               ? 'Drop in your URL and we will review your storefront, messaging clarity, trust signals, and conversion flow.'
-              : 'Complete this full setup flow, get your website rating, then continue to billing.'}
+              : 'Complete this setup flow, get your website rating, and then enter the workspace. You can upgrade whenever you are ready.'}
           </p>
           <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10">
             <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${progress}%` }} />
@@ -644,10 +644,10 @@ export default function Onboarding() {
               actions={(
                 <button
                   type="button"
-                  onClick={continueToBilling}
+                  onClick={continueToWorkspace}
                   className="w-full rounded-lg bg-emerald-400 px-5 py-2.5 text-sm font-semibold text-black sm:w-auto"
                 >
-                  View full analysis
+                  Enter workspace
                 </button>
               )}
               metrics={onboardingReportMetrics}

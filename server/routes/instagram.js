@@ -20,7 +20,7 @@ const {
   deleteVideoFromFolder,
 } = instagramWorkspace;
 
-router.post('/search', clerkAuth, hydrateSubscription, requirePaidSubscription, createUsageGuard(METRICS.INSTAGRAM_SEARCH, {
+router.post('/search', clerkAuth, hydrateSubscription, createUsageGuard(METRICS.INSTAGRAM_SEARCH, {
   message: 'You have reached your monthly Instagram search limit.',
   upgradePrompt: 'Upgrade your plan or wait for the next billing cycle to continue Instagram research.',
 }), searchInstagram);
@@ -42,34 +42,30 @@ router.post(
   refreshTrends
 );
 
-router.get('/workspace/folders', clerkAuth, hydrateSubscription, requirePaidSubscription, listFolders);
-router.post('/workspace/folders', clerkAuth, hydrateSubscription, requirePaidSubscription, createFolder);
+router.get('/workspace/folders', clerkAuth, hydrateSubscription, listFolders);
+router.post('/workspace/folders', clerkAuth, hydrateSubscription, createFolder);
 router.get(
   '/workspace/folders/:folderId',
   clerkAuth,
   hydrateSubscription,
-  requirePaidSubscription,
   getFolder
 );
 router.delete(
   '/workspace/folders/:folderId',
   clerkAuth,
   hydrateSubscription,
-  requirePaidSubscription,
   deleteFolder
 );
 router.post(
   '/workspace/folders/:folderId/videos',
   clerkAuth,
   hydrateSubscription,
-  requirePaidSubscription,
   addVideoToFolder
 );
 router.delete(
   '/workspace/folders/:folderId/videos/:videoId',
   clerkAuth,
   hydrateSubscription,
-  requirePaidSubscription,
   deleteVideoFromFolder
 );
 

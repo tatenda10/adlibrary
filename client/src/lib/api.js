@@ -109,6 +109,8 @@ export function isBillingOrQuotaError(err) {
     combined.includes('monthly facebook search limit') ||
     combined.includes('monthly tiktok search limit') ||
     combined.includes('workspace video limit') ||
+    combined.includes('workspace folder limit') ||
+    combined.includes('saved item limit') ||
     combined.includes('usage limit reached') ||
     combined.includes('billing cycle') ||
     combined.includes('upgrade your plan') ||

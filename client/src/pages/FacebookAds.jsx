@@ -81,6 +81,7 @@ const DEFAULT_COUNTRIES = [
   { value: COUNTRY_ALL, label: 'All countries' },
   { value: 'US', label: 'United States' },
 ];
+const FREE_RESULT_LIMIT = 8;
 
 function humanizeFacebookSlug(slug) {
   const raw = String(slug || '').replace(/^@/, '').trim();
@@ -259,6 +260,8 @@ function FacebookAds() {
   const sourceKey = activeSource.sourceKey || activeSource.id;
   const isAdSource = sourceKey === 'apify_meta_ads';
   const hasProAccess = Boolean(subscription?.is_pro);
+  const hasPaidPlan = Boolean(subscription?.is_active);
+  const limitOptions = hasPaidPlan ? [20, 40, 60, 100] : [FREE_RESULT_LIMIT];
   const selectedCountry = useMemo(() => {
     if (country === COUNTRY_ALL) {
       return { value: COUNTRY_ALL, label: 'All countries' };
@@ -271,6 +274,12 @@ function FacebookAds() {
     setSeedQuery('');
     setSelectedCompetitor(null);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!hasPaidPlan && limit !== FREE_RESULT_LIMIT) {
+      setLimit(FREE_RESULT_LIMIT);
+    }
+  }, [hasPaidPlan, limit]);
 
   const filteredCountries = useMemo(() => {
     const allOption = { value: COUNTRY_ALL, label: 'All countries' };
@@ -645,10 +654,9 @@ function FacebookAds() {
                 className={`${FB_TOOLBAR_CONTROL} w-[4.5rem]`}
                 aria-label="Result limit"
               >
-                <option value={20}>20</option>
-                <option value={40}>40</option>
-                <option value={60}>60</option>
-                <option value={100}>100</option>
+                {limitOptions.map((value) => (
+                  <option key={value} value={value}>{value}</option>
+                ))}
               </select>
 
               <div ref={countryRef} className="relative min-w-[10rem] flex-1 max-w-[16rem]">
@@ -721,10 +729,9 @@ function FacebookAds() {
               onChange={(event) => setLimit(Number(event.target.value))}
               className={`${FB_TOOLBAR_CONTROL} w-[4.5rem]`}
             >
-              <option value={20}>20</option>
-              <option value={40}>40</option>
-              <option value={60}>60</option>
-              <option value={100}>100</option>
+              {limitOptions.map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
             </select>
           )}
 
@@ -786,7 +793,18 @@ function FacebookAds() {
           </p>
         ) : null}
 
-        {isAdSource && !hasProAccess ? (
+        {!hasPaidPlan ? (
+          <div className="rounded-sm border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+            Free plan: 5 Facebook searches per month, 8 results per search, 1 workspace folder, and 2 saved items.
+            <button
+              type="button"
+              onClick={() => navigate('/billing?checkoutPlan=starter')}
+              className="ml-2 font-semibold text-white underline underline-offset-2"
+            >
+              Upgrade for more
+            </button>
+          </div>
+        ) : isAdSource && !hasProAccess ? (
           <div className="rounded-sm border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
             Pro unlocks research brief, competitor search, and AI-assisted keyword expansion.
             <button
@@ -1004,13 +1022,15 @@ function FacebookAds() {
             </div>
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleSaveCollection}
-              className="rounded-sm bg-[#7c3aed] px-4 py-2 text-sm font-semibold text-white"
-            >
-              Save Results
-            </button>
+            {hasPaidPlan ? (
+              <button
+                type="button"
+                onClick={handleSaveCollection}
+                className="rounded-sm bg-[#7c3aed] px-4 py-2 text-sm font-semibold text-white"
+              >
+                Save Results
+              </button>
+            ) : null}
             <select
               value={resultFilter}
               onChange={(event) => setResultFilter(event.target.value)}

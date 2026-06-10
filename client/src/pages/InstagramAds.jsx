@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useBilling } from '../components/billing/BillingContext.jsx';
@@ -32,6 +32,7 @@ const IG_CONTROL =
   'h-10 min-h-10 shrink-0 rounded-sm app-input px-3 text-sm leading-none';
 const IG_BUTTON =
   'inline-flex h-10 min-h-10 shrink-0 items-center justify-center rounded-sm px-4 text-sm font-medium leading-none';
+const FREE_RESULT_LIMIT = 8;
 
 function InstagramAds() {
   const location = useLocation();
@@ -63,12 +64,20 @@ function InstagramAds() {
   const source = location.pathname.includes('/instagram/reels') ? 'reels' : 'profile_posts';
   const activeSource = INSTAGRAM_SOURCES.find((option) => option.id === source) || INSTAGRAM_SOURCES[0];
   const hasProAccess = Boolean(subscription?.is_pro);
+  const hasPaidPlan = Boolean(subscription?.is_active);
+  const limitOptions = hasPaidPlan ? [12, 24, 48, 72, 96] : [FREE_RESULT_LIMIT];
   const filteredWorkspaceFolders = useMemo(() => {
     const q = workspaceSearch.trim().toLowerCase();
     if (!q) return workspaceFolders;
     return workspaceFolders.filter((folder) => String(folder?.name || '').toLowerCase().includes(q));
   }, [workspaceFolders, workspaceSearch]);
   const sortedResults = useMemo(() => sortInstagramResults(results, sortBy), [results, sortBy]);
+
+  useEffect(() => {
+    if (!hasPaidPlan && limit !== FREE_RESULT_LIMIT) {
+      setLimit(FREE_RESULT_LIMIT);
+    }
+  }, [hasPaidPlan, limit]);
 
   const runSearch = async (event) => {
     event.preventDefault();
@@ -177,11 +186,15 @@ function InstagramAds() {
   };
 
   const handleAnalyze = async (post) => {
-    if (!hasProAccess) {
-      navigate('/billing?checkoutPlan=pro');
-      return;
+    try {
+      const result = await ensureAnalysis(post);
+      if (result) {
+        handleView(post);
+      }
+    } catch (err) {
+      console.error(err);
+      notifyApiError(err, 'Failed to analyze this Instagram post.');
     }
-    await ensureAnalysis(post);
   };
 
   const openWorkspaceModal = async (post) => {
@@ -277,11 +290,9 @@ function InstagramAds() {
             onChange={(event) => setLimit(Number(event.target.value))}
             className={IG_CONTROL}
           >
-            <option value={12}>12</option>
-            <option value={24}>24</option>
-            <option value={48}>48</option>
-            <option value={72}>72</option>
-            <option value={96}>96</option>
+            {limitOptions.map((value) => (
+              <option key={value} value={value}>{value}</option>
+            ))}
           </select>
 
           <button
@@ -312,9 +323,20 @@ function InstagramAds() {
           </button>
         </div>
 
-        {!hasProAccess ? (
+        {!hasPaidPlan ? (
+          <div className="rounded-sm border border-sky-500/25 bg-sky-500/10 p-3 text-xs text-sky-100">
+            Free plan: 5 Instagram searches per month, 8 results per search, 1 workspace folder, 2 saved items, and 1 analysis preview.
+            <button
+              type="button"
+              onClick={() => navigate('/billing?checkoutPlan=starter')}
+              className="ml-2 font-semibold text-white underline underline-offset-2"
+            >
+              Upgrade for more
+            </button>
+          </div>
+        ) : !hasProAccess ? (
           <div className="rounded-sm border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-200">
-            Pro unlocks intelligent profile expansion and post analysis on Instagram.
+            Pro unlocks intelligent profile expansion on Instagram.
             <button
               type="button"
               onClick={() => navigate('/billing?checkoutPlan=pro')}
@@ -499,10 +521,10 @@ function InstagramAds() {
                 ) : null}
                 <button
                   onClick={() => handleAnalyze(post)}
-                  disabled={isAnalyzingCard || isSavingCard || !hasProAccess}
+                  disabled={isAnalyzingCard || isSavingCard}
                   className="rounded-sm bg-[#dbeafe] px-2.5 py-1 text-xs font-semibold text-[#1e3a8a] disabled:opacity-60"
                 >
-                  {!hasProAccess ? 'Pro only' : isAnalyzingCard ? 'Analyzing...' : 'Analyze'}
+                  {isAnalyzingCard ? 'Analyzing...' : hasProAccess ? 'Analyze' : 'Preview analysis'}
                 </button>
                 {hasAnalysis ? (
                   <button
@@ -540,7 +562,6 @@ function InstagramAds() {
                 onClick={() => {
                   setWorkspaceModalOpen(false);
                   setWorkspacePost(null);
-                  setWorkspaceError('');
                 }}
                 className="rounded-sm px-2 py-1 text-sm text-white/70"
               >

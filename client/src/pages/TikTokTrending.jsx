@@ -8,6 +8,7 @@ import useBookmarks from '../hooks/useBookmarks.js';
 import { keyForVideo, storeAnalysisRecord } from '../lib/analysis-store.js';
 import { createCollection, getCollection, updateCollection, isBillingOrQuotaError } from '../lib/api.js';
 import { useApiToast } from '../hooks/useApiToast.js';
+const FREE_RESULT_LIMIT = 8;
 
 function TikTokTrending() {
   const { getToken } = useAuth();
@@ -40,6 +41,14 @@ function TikTokTrending() {
 
   const savedUrls = useMemo(() => new Set(bookmarks.map((item) => item.tiktok_url)), [bookmarks]);
   const hasProAccess = Boolean(subscription?.is_pro);
+  const hasPaidPlan = Boolean(subscription?.is_active);
+  const limitOptions = hasPaidPlan ? [12, 20, 32, 40] : [FREE_RESULT_LIMIT];
+
+  useEffect(() => {
+    if (!hasPaidPlan && limit !== FREE_RESULT_LIMIT) {
+      setLimit(FREE_RESULT_LIMIT);
+    }
+  }, [hasPaidPlan, limit]);
 
   useEffect(() => {
     if (!searchError) return;
@@ -197,10 +206,6 @@ function TikTokTrending() {
   };
 
   const handleAnalyze = async (video) => {
-    if (!hasProAccess) {
-      navigate('/billing?checkoutPlan=pro');
-      return;
-    }
     const result = await ensureAnalysis(video);
     if (!result) return;
 
@@ -330,10 +335,9 @@ function TikTokTrending() {
             className="rounded-sm px-3 py-2 text-sm"
             style={{ background: 'var(--app-panel)', border: 'none' }}
           >
-            <option value={12}>12</option>
-            <option value={20}>20</option>
-            <option value={32}>32</option>
-            <option value={40}>40</option>
+            {limitOptions.map((value) => (
+              <option key={value} value={value}>{value}</option>
+            ))}
           </select>
 
           <select
@@ -395,9 +399,20 @@ function TikTokTrending() {
           </label>
         </div>
 
-        {!hasProAccess ? (
+        {!hasPaidPlan ? (
+          <div className="rounded-sm border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+            Free plan: 5 TikTok searches per month, 8 results per search, 1 workspace folder, 2 saved items, and 1 analysis preview.
+            <button
+              type="button"
+              onClick={() => navigate('/billing?checkoutPlan=starter')}
+              className="ml-2 font-semibold text-white underline underline-offset-2"
+            >
+              Upgrade for more
+            </button>
+          </div>
+        ) : !hasProAccess ? (
           <div className="rounded-sm border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-            Pro unlocks intelligent TikTok search and AI analysis for each video.
+            Pro unlocks intelligent TikTok search.
             <button
               type="button"
               onClick={() => navigate('/billing?checkoutPlan=pro')}
@@ -408,7 +423,7 @@ function TikTokTrending() {
           </div>
         ) : null}
 
-        {(videos.length > 0 || selectedCollectionId) && (
+        {hasPaidPlan && (videos.length > 0 || selectedCollectionId) && (
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -548,10 +563,10 @@ function TikTokTrending() {
                   <button
                     type="button"
                     onClick={() => handleAnalyze(activeVideo)}
-                    disabled={!hasProAccess}
+                    disabled={false}
                     className="rounded-sm bg-[#dbeafe] px-3 py-2 text-xs font-semibold text-[#1e3a8a] disabled:opacity-60"
                   >
-                    {hasProAccess ? 'Analyze this video' : 'Pro only'}
+                    {hasProAccess ? 'Analyze this video' : 'Preview analysis'}
                   </button>
                 </div>
               </div>
@@ -661,10 +676,10 @@ function TikTokTrending() {
 
                 <button
                   onClick={() => handleAnalyze(video)}
-                  disabled={isAnalyzingCard || isSavingCard || !hasProAccess}
+                  disabled={isAnalyzingCard || isSavingCard}
                   className="rounded-sm bg-[#dbeafe] px-2.5 py-1 text-xs font-semibold text-[#1e3a8a] disabled:opacity-60"
                 >
-                  {!hasProAccess ? 'Pro only' : isAnalyzingCard ? 'Analyzing...' : 'Analyze'}
+                  {isAnalyzingCard ? 'Analyzing...' : hasProAccess ? 'Analyze' : 'Preview analysis'}
                 </button>
 
                 {hasAnalysis && (

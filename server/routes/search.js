@@ -1,6 +1,6 @@
 const express = require('express');
 const clerkAuth = require('../middleware/clerkAuth');
-const { hydrateSubscription, requirePaidSubscription, requireProSubscription } = require('../middleware/requireSubscription');
+const { hydrateSubscription, requireProSubscription } = require('../middleware/requireSubscription');
 const { createUsageGuard } = require('../middleware/usageGuard');
 const {
   searchTikTok,
@@ -13,7 +13,7 @@ const { METRICS } = require('../utils/usage');
 
 const router = express.Router();
 
-router.post('/', clerkAuth, hydrateSubscription, requirePaidSubscription, createUsageGuard(METRICS.TIKTOK_SEARCH, {
+router.post('/', clerkAuth, hydrateSubscription, createUsageGuard(METRICS.TIKTOK_SEARCH, {
   message: 'You have reached your monthly TikTok search limit.',
   upgradePrompt: 'Upgrade your plan or wait for the next billing cycle to continue TikTok research.',
 }), searchTikTok);
