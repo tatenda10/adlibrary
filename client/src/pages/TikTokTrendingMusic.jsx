@@ -16,17 +16,21 @@ const TABS = [
 
 export default function TikTokTrendingMusic() {
   const { getToken } = useAuth();
-  const { notifyApiError, notifyBillingOrApiError, showSuccess } = useApiToast();
+  const { notifyApiError, notifyBillingOrApiError, showSuccess, showInfo } = useApiToast();
   const [tab, setTab] = useState('chart');
   const [viewCountry, setViewCountry] = useState(DEFAULT_COUNTRY);
   const [searchCountry, setSearchCountry] = useState(DEFAULT_COUNTRY);
   const [items, setItems] = useState([]);
+  const [fetchedAt, setFetchedAt] = useState('');
+  const [isStale, setIsStale] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const applyPayload = useCallback((data) => {
     setItems(Array.isArray(data?.items) ? data.items : []);
     setViewCountry(data?.country || searchCountry || DEFAULT_COUNTRY);
+    setFetchedAt(data?.fetched_at || '');
+    setIsStale(Boolean(data?.stale || data?.scrape_failed || data?.kept_cache));
   }, [searchCountry]);
 
   const loadDailyChart = useCallback(
@@ -86,7 +90,15 @@ export default function TikTokTrendingMusic() {
           limit: RESULT_LIMIT,
         });
         applyPayload(data);
-        showSuccess(`Daily chart updated for ${searchCountry}.`);
+        if (data?.kept_cache || data?.stale || data?.scrape_failed) {
+          showInfo(
+            `Could not refresh live data for ${searchCountry}. Showing the last saved chart${
+              data?.fetched_at ? ` from ${new Date(data.fetched_at).toLocaleString()}` : ''
+            }.`
+          );
+        } else {
+          showSuccess(`Daily chart updated for ${searchCountry}.`);
+        }
       } else {
         const data = await fetchTikTokHotTakes(token, {
           country: searchCountry,
@@ -205,6 +217,13 @@ export default function TikTokTrendingMusic() {
             </p>
           </div>
         </div>
+      ) : null}
+
+      {!isLoading && tab === 'chart' && items.length > 0 && isStale ? (
+        <p className="rounded-sm border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/90">
+          Showing cached chart{fetchedAt ? ` from ${new Date(fetchedAt).toLocaleString()}` : ''}. TikTok live
+          data is temporarily unavailable — refresh will retry when the scraper recovers.
+        </p>
       ) : null}
 
       {!isLoading && items.length > 0 ? (

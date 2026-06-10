@@ -169,22 +169,41 @@ function buildTrendsActorInput({
   return input;
 }
 
-async function runTrendsActor(input, limit) {
+async function runApifyActor(actorId, input, limit, { logLabel = 'tiktok-trends' } = {}) {
   if (!process.env.APIFY_TOKEN) {
     throw new Error('APIFY_TOKEN is not configured');
   }
 
   const client = new ApifyClient({ token: process.env.APIFY_TOKEN });
-  const run = await client.actor(TIKTOK_TRENDS_ACTOR_ID).call(input);
+  const run = await client.actor(actorId).call(input);
   const maxItems = Math.min(Math.max(Number(limit) || 48, 1), 100);
   const { items } = await client.dataset(run.defaultDatasetId).listItems({ limit: maxItems });
   const list = Array.isArray(items) ? items : [];
+  const runStatus = String(run?.status || '').toUpperCase();
+  const unhealthyRun = ['FAILED', 'ABORTED', 'TIMED-OUT'].includes(runStatus);
+
+  if (unhealthyRun || list.length === 0) {
+    console.warn(`[${logLabel}] scrape unhealthy`, {
+      actor: actorId,
+      runId: run?.id,
+      runStatus,
+      itemCount: list.length,
+      input,
+    });
+  }
 
   return {
     items: list,
-    runStatus: run.status,
+    runStatus,
     itemCount: list.length,
+    scrapeHealthy: !unhealthyRun && list.length > 0,
   };
+}
+
+async function runTrendsActor(input, limit) {
+  return runApifyActor(TIKTOK_TRENDS_ACTOR_ID, input, limit, {
+    logLabel: 'tiktok-trends',
+  });
 }
 
 async function fetchTikTokHotTakes(req, res) {
@@ -248,6 +267,7 @@ module.exports = {
   fetchTikTokHotTakes,
   buildTrendsActorInput,
   normalizeTrendItem,
+  runApifyActor,
   runTrendsActor,
   TIKTOK_TRENDS_ACTOR_ID,
 };

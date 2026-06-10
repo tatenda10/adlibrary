@@ -225,7 +225,7 @@ function App() {
               />
               {/* <Route path="/tiktok/saved" element={<RequirePaidAccess><TikTokSaved /></RequirePaidAccess>} /> */}
               {/* <Route path="/tiktok/for-you" element={<RequireProAccess><TikTokForYou /></RequireProAccess>} /> */}
-              <Route path="/tiktok/trending-music" element={<RequireProAccess><TikTokTrendingMusic /></RequireProAccess>} />
+              <Route path="/tiktok/trending-music" element={<TikTokTrendingMusic />} />
               <Route path="/tiktok/predictor" element={<RequireProAccess><TikTokPredictor /></RequireProAccess>} />
               {/* <Route path="/tiktok/collections" element={<RequirePaidAccess><TikTokCollectionsIndex /></RequirePaidAccess>} /> */}
               {/* <Route path="/tiktok/collections/:id" element={<RequirePaidAccess><TikTokCollectionPage /></RequirePaidAccess>} /> */}
@@ -243,7 +243,7 @@ function App() {
               <Route path="/app/monthly-social-media-plan/:month" element={<RequirePaidAccess><MonthlySocialMediaPlanner /></RequirePaidAccess>} />
               <Route path="/app/monthly-social-media-plan/:month/:date" element={<RequirePaidAccess><MonthlySocialMediaPlanner /></RequirePaidAccess>} />
               <Route path="/app/saved-plans" element={<RequirePaidAccess><SavedPlans /></RequirePaidAccess>} />
-              <Route path="/tutorial" element={<RequirePaidAccess><Tutorial /></RequirePaidAccess>} />
+              <Route path="/tutorial" element={<Tutorial />} />
               <Route path="/billing" element={<Billing />} />
               <Route path="/settings/*" element={<Settings />} />
             </Route>

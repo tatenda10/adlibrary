@@ -4,6 +4,11 @@ const DEFAULT_COUNTRY = String(process.env.TIKTOK_TRENDING_MUSIC_DEFAULT_COUNTRY
   .trim()
   .toUpperCase();
 
+const MIN_ITEMS_TO_CACHE = Math.min(
+  Math.max(Number(process.env.TIKTOK_MUSIC_CACHE_MIN_ITEMS || 5), 1),
+  48
+);
+
 function parseItemsJson(value) {
   if (!value) return [];
   if (Array.isArray(value)) return value;
@@ -49,6 +54,21 @@ async function getTrendingMusicCache(countryCode) {
 async function upsertTrendingMusicCache(countryCode, items = [], source = 'daily_job') {
   const code = String(countryCode || DEFAULT_COUNTRY).trim().toUpperCase();
   const list = Array.isArray(items) ? items : [];
+
+  if (list.length < MIN_ITEMS_TO_CACHE) {
+    const existing = await getTrendingMusicCache(code);
+    if (existing?.items?.length) {
+      console.warn('[tiktok-trending-music] scrape returned too few items; keeping existing cache', {
+        country: code,
+        received: list.length,
+        minRequired: MIN_ITEMS_TO_CACHE,
+        kept: existing.items.length,
+      });
+      return { ...existing, skipped_write: true, stale: true, scrape_failed: true };
+    }
+    return null;
+  }
+
   const payload = JSON.stringify(list);
 
   await pool.query(
@@ -74,6 +94,7 @@ async function cacheNeedsDailyRefresh(countryCode) {
 
 module.exports = {
   DEFAULT_COUNTRY,
+  MIN_ITEMS_TO_CACHE,
   getTrendingMusicCache,
   upsertTrendingMusicCache,
   cacheNeedsDailyRefresh,

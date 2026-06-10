@@ -20,11 +20,17 @@ async function runTrendingMusicDailyCycle() {
         continue;
       }
 
-      await refreshTrendingMusicForCountry(country, {
+      const result = await refreshTrendingMusicForCountry(country, {
         source: 'daily_job',
         limit: Number(process.env.TIKTOK_TRENDING_MUSIC_LIMIT || 48),
       });
-      console.log(`[tiktok-trending-music] Refreshed ${country} cache.`);
+      if (result?.kept_cache) {
+        console.warn(
+          `[tiktok-trending-music] ${country} scrape failed; kept stale cache (${result.items?.length || 0} items).`
+        );
+      } else {
+        console.log(`[tiktok-trending-music] Refreshed ${country} cache.`);
+      }
     } catch (error) {
       console.error(`[tiktok-trending-music] ${country} refresh failed:`, error?.message || error);
     }

@@ -1,11 +1,9 @@
 const express = require('express');
 const clerkAuth = require('../middleware/clerkAuth');
 const { hydrateSubscription, requirePaidSubscription, requireProSubscription } = require('../middleware/requireSubscription');
-const { createUsageGuard } = require('../middleware/usageGuard');
 const { searchInstagram, intelligentSearchInstagram, proxyInstagramMedia } = require('../controllers/instagramController');
 const { getTrends, refreshTrends } = require('../controllers/instagramTrendsController');
 const instagramWorkspace = require('../controllers/instagramWorkspaceController');
-const { METRICS } = require('../utils/usage');
 
 const router = express.Router();
 
@@ -20,27 +18,11 @@ const {
   deleteVideoFromFolder,
 } = instagramWorkspace;
 
-router.post('/search', clerkAuth, hydrateSubscription, createUsageGuard(METRICS.INSTAGRAM_SEARCH, {
-  message: 'You have reached your monthly Instagram search limit.',
-  upgradePrompt: 'Upgrade your plan or wait for the next billing cycle to continue Instagram research.',
-}), searchInstagram);
-router.post('/intelligent', clerkAuth, hydrateSubscription, requireProSubscription, createUsageGuard(METRICS.INSTAGRAM_SEARCH, {
-  message: 'You have reached your monthly Instagram search limit.',
-  upgradePrompt: 'Upgrade your plan or wait for the next billing cycle to continue Instagram research.',
-}), intelligentSearchInstagram);
+router.post('/search', clerkAuth, hydrateSubscription, searchInstagram);
+router.post('/intelligent', clerkAuth, hydrateSubscription, requireProSubscription, intelligentSearchInstagram);
 
 router.get('/trends', clerkAuth, hydrateSubscription, requirePaidSubscription, getTrends);
-router.post(
-  '/trends/refresh',
-  clerkAuth,
-  hydrateSubscription,
-  requirePaidSubscription,
-  createUsageGuard(METRICS.INSTAGRAM_SEARCH, {
-    message: 'You have reached your monthly Instagram search limit.',
-    upgradePrompt: 'Upgrade your plan or wait for the next billing cycle to continue Instagram research.',
-  }),
-  refreshTrends
-);
+router.post('/trends/refresh', clerkAuth, hydrateSubscription, requirePaidSubscription, refreshTrends);
 
 router.get('/workspace/folders', clerkAuth, hydrateSubscription, listFolders);
 router.post('/workspace/folders', clerkAuth, hydrateSubscription, createFolder);
