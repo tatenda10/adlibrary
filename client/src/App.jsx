@@ -38,6 +38,7 @@ import Settings from './pages/Settings.jsx';
 import Tutorial from './pages/Tutorial.jsx';
 import DecisionEngine from './pages/DecisionEngine.jsx';
 import CompetitorRadar from './pages/CompetitorRadar.jsx';
+import CompetitorFunnelSpy from './pages/CompetitorFunnelSpy.jsx';
 import SavedPlans from './pages/SavedPlans.jsx';
 import MonthlySocialMediaPlanner from './components/decision-engine/MonthlySocialMediaPlanner.jsx';
 import { getOnboardingStatus } from './lib/api.js';
@@ -185,6 +186,7 @@ function App() {
               <Route path="/app/cro-audit" element={<Navigate to="/website/cro-audit" replace />} />
               <Route path="/website" element={<Navigate to="/tiktok/trending" replace />} />
               <Route path="/website/cro-audit" element={<RequireProAccess><CroAudit /></RequireProAccess>} />
+              <Route path="/website/funnel-spy" element={<RequireProAccess><CompetitorFunnelSpy /></RequireProAccess>} />
               <Route path="/website/saved" element={<RequireProAccess><CroAudit /></RequireProAccess>} />
               <Route path="/facebook" element={<Navigate to="/facebook/ads" replace />} />
               <Route path="/facebook/ads" element={<FacebookAds />} />

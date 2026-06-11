@@ -41,6 +41,7 @@ const singleSectionTabs = {
   ],
   website: [
     { label: 'Website Research', to: '/website/cro-audit', icon: WebsiteIcon, description: 'Run a fresh CRO audit for any website.' },
+    { label: 'Funnel Spy', to: '/website/funnel-spy', icon: DecisionIcon, description: 'Break down competitor ads, landing pages, and post-click funnel mechanics.' },
     // { label: 'Competitor Radar', to: '/app/competitor-radar', icon: DecisionIcon, description: 'Map competitors, offers, websites, and audience clues while reviewing your market.' },
     // { label: 'Saved Audits', to: '/website/saved', icon: BookmarkMiniIcon, description: 'Reopen CRO audits saved to your account.' },
   ],
@@ -66,7 +67,7 @@ const singleSectionTabs = {
 const sectionMeta = {
   overview: { eyebrow: 'Intelligence', title: 'Marketing dashboard', description: 'Track trend lines, official updates, and what is moving right now before diving deeper.' },
   tutorial: { eyebrow: 'Guide', title: 'App tutorial', description: 'See what each area of the app does before you start using the tools.' },
-  website: { eyebrow: 'Website', title: 'Website CRO', description: 'Run fresh website audits and reopen saved CRO reviews from one place.' },
+  website: { eyebrow: 'Website', title: 'Website research', description: 'Run CRO audits and full-funnel competitor teardowns from one workspace.' },
   tiktok: { eyebrow: 'Platform', title: 'TikTok intelligence', description: 'Trend discovery, hooks, audio, and prediction tools live together here.' },
   facebook: { eyebrow: 'Platform', title: 'Facebook research', description: 'Search ads, trending music, and hooks from one Facebook workspace.' },
   instagram: { eyebrow: 'Platform', title: 'Instagram inspiration', description: 'Keep the main Instagram workspace focused on swipe-worthy posts and reels.' },

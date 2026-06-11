@@ -29,22 +29,28 @@ const { analyzeTikTokCore } = require('./controllers/analyzeController');
 const { analyzeCroAuditCore } = require('./controllers/croAuditController');
 const pool = require('./db/connection');
 
+function normalizeOrigin(value = '') {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+
 const defaultCorsOrigins = [
   process.env.CLIENT_ORIGIN || 'http://localhost:5173',
   'http://localhost:5174',
+  'https://viraladlibrary.site',
   'https://www.viraladlibrary.site',
 ];
 const configuredCorsOrigins = process.env.CORS_ORIGINS
-  ? process.env.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+  ? process.env.CORS_ORIGINS.split(',').map((s) => normalizeOrigin(s)).filter(Boolean)
   : [];
-const corsOrigins = [...new Set([...defaultCorsOrigins, ...configuredCorsOrigins])];
+const corsOrigins = [...new Set([...defaultCorsOrigins.map((origin) => normalizeOrigin(origin)), ...configuredCorsOrigins])];
 
 const app = express();
 
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || corsOrigins.includes(origin)) {
+      const normalizedOrigin = normalizeOrigin(origin);
+      if (!origin || corsOrigins.includes(normalizedOrigin)) {
         callback(null, true);
         return;
       }
