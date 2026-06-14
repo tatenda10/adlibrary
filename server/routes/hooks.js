@@ -5,6 +5,7 @@ const {
   generateHookScript,
   generateFacebookAdCopy,
   extractProductFromWebsite,
+  generateBulkCreative,
 } = require('../controllers/hooksController');
 
 const router = express.Router();
@@ -23,6 +24,13 @@ router.post(
   hydrateSubscription,
   requireProSubscription,
   extractProductFromWebsite
+);
+router.post(
+  '/bulk-creative',
+  clerkAuth,
+  hydrateSubscription,
+  requireProSubscription,
+  generateBulkCreative
 );
 
 module.exports = router;

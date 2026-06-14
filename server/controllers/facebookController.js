@@ -961,7 +961,7 @@ function normalizeFacebookFollowItem(item, index) {
   };
 }
 
-async function runApifyActor(actorId, runInput, datasetLimit) {
+async function runApifyActor(actorId, runInput, datasetLimit, context = {}) {
   if (!process.env.APIFY_TOKEN) {
     throw new Error('APIFY_TOKEN is not configured');
   }
@@ -972,6 +972,7 @@ async function runApifyActor(actorId, runInput, datasetLimit) {
     limit: clamp(datasetLimit, 1, 500, 100),
   });
   const safe = Array.isArray(items) ? items : [];
+  const runStatus = String(run?.status || '').toUpperCase();
   const inputUrls = runInput?.urls || runInput?.startUrls;
   const inputUrlPreview =
     Array.isArray(inputUrls) && inputUrls.length
@@ -982,6 +983,7 @@ async function runApifyActor(actorId, runInput, datasetLimit) {
     runId: run?.id,
     datasetId: run?.defaultDatasetId,
     itemCount: safe.length,
+    runStatus,
     inputUrlPreview: inputUrlPreview || undefined,
   });
   if (safe[0]) {
@@ -999,6 +1001,23 @@ async function runApifyActor(actorId, runInput, datasetLimit) {
   if (process.env.APIFY_DEBUG_LOGS === '1' && safe[1]) {
     console.log('[Apify] second raw item', safe[1]);
   }
+
+  const unhealthyRun = ['FAILED', 'ABORTED', 'TIMED-OUT'].includes(runStatus);
+  if (unhealthyRun || safe.length === 0) {
+    const { recordScrapeFailure } = require('../utils/scrapeIncidents');
+    recordScrapeFailure({
+      userId: context.userId || null,
+      source: context.source || 'facebook-apify',
+      endpoint: context.endpoint || null,
+      runStatus,
+      itemCount: safe.length,
+      actor: actorId,
+      runId: run?.id,
+      input: runInput,
+      extraMeta: inputUrlPreview ? { inputUrlPreview } : null,
+    }).catch((err) => console.warn('[observability] incident log failed:', err?.message));
+  }
+
   return safe;
 }
 
@@ -1064,6 +1083,8 @@ async function searchFacebookApifyAds({
   mediaType = 'all',
   languageCodes = [],
   actorId,
+  userId = null,
+  endpoint = null,
 }) {
   const resolvedActorId = String(actorId || DEFAULT_FACEBOOK_ADS_ACTOR_ID).trim() || DEFAULT_FACEBOOK_ADS_ACTOR_ID;
   const targets = buildSearchTargets({
@@ -1102,7 +1123,11 @@ async function searchFacebookApifyAds({
     ? clamp(limit, 1, 500, 100)
     : Math.min(clamp(limit, 1, 100, 20) * Math.max(targets.length, 1), 200);
 
-  const items = await runApifyActor(resolvedActorId, runInput, datasetLimit);
+  const items = await runApifyActor(resolvedActorId, runInput, datasetLimit, {
+    userId,
+    endpoint: endpoint || '/api/facebook/ads/search',
+    source: 'facebook-apify',
+  });
 
   const normalizedResults = items
     .map(normalizeFacebookAdItem)
@@ -1216,6 +1241,8 @@ async function searchFacebookAds(req, res) {
           publisherPlatforms: [],
           mediaType: 'all',
           languageCodes: [],
+          userId: req.user?.id || null,
+          endpoint: req.originalUrl || req.path,
         })
       );
     }
@@ -1324,4 +1351,8 @@ async function intelligentSearchFacebookAds(req, res) {
   }
 }
 
-module.exports = { searchFacebookAds, intelligentSearchFacebookAds };
+module.exports = {
+  searchFacebookAds,
+  intelligentSearchFacebookAds,
+  searchFacebookApifyAds,
+};

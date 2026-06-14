@@ -11,6 +11,10 @@ import {
 import CubeLoader, { CubeLoaderOverlay } from '../components/CubeLoader.jsx';
 import FacebookHookGeneratorPanel from '../components/facebook/FacebookHookGeneratorPanel.jsx';
 import { useApiToast } from '../hooks/useApiToast.js';
+import { computeAdLongevityDays, sortAdsByLongevity } from '../lib/adLongevity.js';
+import { buildIntelFromFacebookAd, saveBulkCreativeIntel } from '../lib/bulkCreativeIntel.js';
+
+const SPY_DEFAULT_SORT = 'longest_running';
 
 const FB_TOOLBAR_CONTROL =
   'h-10 min-h-10 shrink-0 rounded-sm app-input px-3 text-sm leading-none';
@@ -242,7 +246,7 @@ function FacebookAds() {
   const [advertiserFilter, setAdvertiserFilter] = useState('all');
   const [ctaFilter, setCtaFilter] = useState('all');
   const [platformFilter, setPlatformFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('best_match');
+  const [sortBy, setSortBy] = useState(SPY_DEFAULT_SORT);
   const countryRef = useRef(null);
   const [seedQuery, setSeedQuery] = useState('');
   const [selectedCompetitor, setSelectedCompetitor] = useState(null);
@@ -336,7 +340,9 @@ function FacebookAds() {
       next = next.filter((item) => (item.publisher_platforms || []).includes(platformFilter));
     }
 
-    if (sortBy === 'newest') {
+    if (sortBy === 'longest_running') {
+      next = sortAdsByLongevity(next);
+    } else if (sortBy === 'newest') {
       next.sort((a, b) => new Date(b.ad_delivery_start_time || b.ad_creation_time || 0) - new Date(a.ad_delivery_start_time || a.ad_creation_time || 0));
     } else if (sortBy === 'advertiser') {
       next.sort((a, b) => String(a.page_name || '').localeCompare(String(b.page_name || '')));
@@ -503,7 +509,7 @@ function FacebookAds() {
       setAdvertiserFilter('all');
       setCtaFilter('all');
       setPlatformFilter('all');
-      setSortBy('best_match');
+      setSortBy(isAdSource ? SPY_DEFAULT_SORT : 'best_match');
       setSaveStatus('');
       const rawResults = Array.isArray(data?.results) ? data.results : [];
       const plan = data?.plan;
@@ -562,7 +568,7 @@ function FacebookAds() {
     setAdvertiserFilter('all');
     setCtaFilter('all');
     setPlatformFilter('all');
-    setSortBy('best_match');
+    setSortBy(isAdSource ? SPY_DEFAULT_SORT : 'best_match');
     setSaveStatus('');
     const hasMatch = results.some((item) => adMatchesCompetitorFilter(item, comp));
     if (!hasMatch && results.length) {
@@ -580,7 +586,7 @@ function FacebookAds() {
     setAdvertiserFilter('all');
     setCtaFilter('all');
     setPlatformFilter('all');
-    setSortBy('best_match');
+    setSortBy(isAdSource ? SPY_DEFAULT_SORT : 'best_match');
   };
 
   const handleSaveCollection = async () => {
@@ -1021,6 +1027,11 @@ function FacebookAds() {
               </button>
             </div>
           ) : null}
+          {isAdSource && sortBy === 'longest_running' ? (
+            <div className="rounded-sm border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-100">
+              Spy mode: ads ranked by run-time — longevity is the closest signal Meta gives you for a proven winner.
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             {hasPaidPlan ? (
               <button
@@ -1080,6 +1091,7 @@ function FacebookAds() {
               onChange={(event) => setSortBy(event.target.value)}
               className="rounded-sm app-input px-3 py-2 text-sm"
             >
+              <option value="longest_running">Longest running (spy)</option>
               <option value="best_match">Best match</option>
               <option value="newest">Newest first</option>
               <option value="video_first">Video first</option>
@@ -1153,7 +1165,7 @@ function FacebookAds() {
               setAdvertiserFilter('all');
               setCtaFilter('all');
               setPlatformFilter('all');
-              setSortBy('best_match');
+              setSortBy(isAdSource ? SPY_DEFAULT_SORT : 'best_match');
               setSelectedCompetitor(null);
             }}
             className="shrink-0 rounded-sm bg-[#25d366] px-3 py-2 text-xs font-semibold text-black"
@@ -1175,7 +1187,7 @@ function FacebookAds() {
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {filteredResults.map((item) => (
-          <FacebookResultCard key={item.id} item={item} />
+          <FacebookResultCard key={item.id} item={item} navigate={navigate} />
         ))}
       </div>
         </>
@@ -1244,8 +1256,9 @@ function resolveFacebookAdCreativeMedia(item) {
   return { posterUrl, videoUrl, snapshotUrl, isVideo };
 }
 
-function FacebookAdResultCard({ item }) {
+function FacebookAdResultCard({ item, navigate }) {
   const media = useMemo(() => resolveFacebookAdCreativeMedia(item), [item]);
+  const longevityDays = useMemo(() => computeAdLongevityDays(item), [item]);
   const [posterFailed, setPosterFailed] = useState(false);
   const [videoFailed, setVideoFailed] = useState(false);
   const [playVideo, setPlayVideo] = useState(false);
@@ -1342,8 +1355,15 @@ function FacebookAdResultCard({ item }) {
         {media.posterUrl && !media.videoUrl ? (
           <span className="rounded-sm bg-sky-400/15 px-2 py-1 text-[11px] text-sky-300">Static</span>
         ) : null}
+        {longevityDays > 0 ? (
+          <span className="rounded-sm bg-amber-400/15 px-2 py-1 text-[11px] text-amber-200">
+            {longevityDays} day{longevityDays === 1 ? '' : 's'} live
+          </span>
+        ) : null}
       </div>
-      <p className="mt-2 text-xs app-muted">Created: {item.ad_creation_time || 'N/A'}</p>
+      <p className="mt-2 text-xs app-muted">
+        Started: {item.ad_delivery_start_time || item.ad_creation_time || 'N/A'}
+      </p>
       {item.search_target ? (
         <p className="mt-1 text-[11px] text-white/45">Search target: {item.search_target}</p>
       ) : null}
@@ -1393,6 +1413,18 @@ function FacebookAdResultCard({ item }) {
       ) : null}
 
       <div className="mt-3 flex flex-wrap gap-2">
+        {navigate ? (
+          <button
+            type="button"
+            onClick={() => {
+              saveBulkCreativeIntel(buildIntelFromFacebookAd(item));
+              navigate('/facebook/hook-generator');
+            }}
+            className="rounded-sm border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-400/20"
+          >
+            20 variations from this ad
+          </button>
+        ) : null}
         {media.snapshotUrl ? (
           <a
             href={media.snapshotUrl}
@@ -1418,7 +1450,7 @@ function FacebookAdResultCard({ item }) {
   );
 }
 
-function FacebookResultCard({ item }) {
+function FacebookResultCard({ item, navigate }) {
   if (item.kind === 'group') {
     return (
       <article className="rounded-sm app-card p-4">
@@ -1480,7 +1512,7 @@ function FacebookResultCard({ item }) {
     );
   }
 
-  return <FacebookAdResultCard item={item} />;
+  return <FacebookAdResultCard item={item} navigate={navigate} />;
 }
 
 function EmptyFacebookIcon() {

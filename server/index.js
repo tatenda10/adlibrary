@@ -17,6 +17,7 @@ const croAuditRoutes = require('./routes/croAudit');
 const croAuditsRoutes = require('./routes/croAudits');
 const articlesRoutes = require('./routes/articles');
 const adminRoutes = require('./routes/admin');
+const analyticsRoutes = require('./routes/analytics');
 const supportRoutes = require('./routes/support');
 const strategyRoutes = require('./routes/strategy');
 const jobsRoutes = require('./routes/jobs');
@@ -24,6 +25,7 @@ const { handleBillingWebhook } = require('./controllers/billingController');
 const { startCompetitorAlertsJob } = require('./jobs/competitorAlertsJob');
 const { startTikTokTrendingMusicJob } = require('./jobs/tiktokTrendingMusicJob');
 const { ensureRuntimeTables } = require('./db/bootstrap');
+const { ensureObservabilityTables } = require('./utils/observabilityStore');
 const { registerJobHandler, startAsyncJobLoop } = require('./utils/asyncJobs');
 const { analyzeTikTokCore } = require('./controllers/analyzeController');
 const { analyzeCroAuditCore } = require('./controllers/croAuditController');
@@ -86,6 +88,7 @@ app.use('/api/cro-audit', croAuditRoutes);
 app.use('/api/cro-audits', croAuditsRoutes);
 app.use('/api/articles', articlesRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/analytics', analyticsRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/strategy', strategyRoutes);
 app.use('/api/jobs', jobsRoutes);
@@ -101,6 +104,7 @@ registerJobHandler('cro_audit', async ({ payload }) => analyzeCroAuditCore(paylo
 
 async function startServer() {
   await ensureRuntimeTables();
+  await ensureObservabilityTables();
   app.listen(port, () => {
     console.log(`Server running on http://localhost:${port}`);
     startCompetitorAlertsJob();

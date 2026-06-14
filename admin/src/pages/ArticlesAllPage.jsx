@@ -1,18 +1,14 @@
 import { ArticleWorkspace } from '../components/ArticleWorkspace.jsx';
-import { useAdminAuth } from '../context/AdminAuthContext.jsx';
+import { AdminPageHeader } from '../components/ui/AdminUi.jsx';
 
 export function ArticlesAllPage() {
-  const { admin } = useAdminAuth();
-
   return (
-    <section className="space-y-4">
-      <div>
-        <h3 className="text-xl font-semibold text-white">All Articles</h3>
-        <p className="mt-1 text-sm text-[#9ca3af]">
-          Review, edit, and delete published or draft stories. Signed in as{' '}
-          <span className="text-[#d1d5db]">{admin?.username}</span>.
-        </p>
-      </div>
+    <section className="mx-auto max-w-6xl space-y-6">
+      <AdminPageHeader
+        eyebrow="Content"
+        title="All articles"
+        description="Review, edit, and delete published or draft posts. Published items appear on the public blog."
+      />
       <ArticleWorkspace mode="all" />
     </section>
   );

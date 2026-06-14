@@ -53,10 +53,12 @@ function normalizeBurbnSoundItem(item, index) {
   );
 }
 
-async function runMusicFallbackActor(countryCode, limit = DEFAULT_LIMIT) {
+async function runMusicFallbackActor(countryCode, limit = DEFAULT_LIMIT, context = {}) {
   const input = buildMusicFallbackActorInput(countryCode, limit);
   const result = await runApifyActor(TIKTOK_MUSIC_FALLBACK_ACTOR_ID, input, limit, {
     logLabel: 'tiktok-trending-music-fallback',
+    userId: context.userId || null,
+    endpoint: context.endpoint || null,
   });
 
   return {
@@ -65,7 +67,7 @@ async function runMusicFallbackActor(countryCode, limit = DEFAULT_LIMIT) {
   };
 }
 
-async function fetchTrendingSoundsFromApify(country, limit = DEFAULT_LIMIT) {
+async function fetchTrendingSoundsFromApify(country, limit = DEFAULT_LIMIT, context = {}) {
   const countryCode = String(country || DEFAULT_COUNTRY).trim().toUpperCase();
   const actorInput = buildTrendsActorInput({
     category: 'sounds',
@@ -89,7 +91,7 @@ async function fetchTrendingSoundsFromApify(country, limit = DEFAULT_LIMIT) {
       minRequired: MIN_ITEMS_TO_CACHE,
     });
 
-    const fallback = await runMusicFallbackActor(countryCode, limit);
+    const fallback = await runMusicFallbackActor(countryCode, limit, context);
     if (fallback.items.length > items.length) {
       items = fallback.items;
       actor = TIKTOK_MUSIC_FALLBACK_ACTOR_ID;
@@ -116,11 +118,28 @@ async function fetchTrendingSoundsFromApify(country, limit = DEFAULT_LIMIT) {
   };
 }
 
-async function refreshTrendingMusicForCountry(country, { source = 'manual', limit = DEFAULT_LIMIT } = {}) {
+async function refreshTrendingMusicForCountry(country, { source = 'manual', limit = DEFAULT_LIMIT, userId = null, endpoint = null } = {}) {
   const countryCode = String(country || DEFAULT_COUNTRY).trim().toUpperCase();
-  const fetched = await fetchTrendingSoundsFromApify(countryCode, limit);
+  const fetched = await fetchTrendingSoundsFromApify(countryCode, limit, { userId, endpoint });
 
   if (!fetched.scrape_ok) {
+    const { recordApiIncident } = require('../utils/observabilityStore');
+    await recordApiIncident({
+      userId,
+      severity: 'warn',
+      source: 'tiktok-trending-music',
+      endpoint,
+      message: `Trending music refresh failed for ${countryCode}: ${fetched.itemCount} items (status ${fetched.runStatus})`,
+      meta: {
+        country: countryCode,
+        actor: fetched.actor,
+        runStatus: fetched.runStatus,
+        itemCount: fetched.itemCount,
+        usedFallback: fetched.used_fallback,
+        source,
+      },
+    }).catch(() => {});
+
     const existing = await getTrendingMusicCache(countryCode);
     if (existing?.items?.length) {
       console.warn('[tiktok-trending-music] live scrape failed; serving stale cache', {
@@ -237,6 +256,8 @@ async function refreshTrendingMusic(req, res) {
     const cached = await refreshTrendingMusicForCountry(country, {
       source: 'manual',
       limit,
+      userId: req.user?.id || null,
+      endpoint: '/api/tiktok/trending-music/refresh',
     });
 
     return res.json(
@@ -248,6 +269,16 @@ async function refreshTrendingMusic(req, res) {
     );
   } catch (error) {
     console.error('refreshTrendingMusic error:', error);
+    const { recordApiIncident } = require('../utils/observabilityStore');
+    recordApiIncident({
+      userId: req.user?.id || null,
+      severity: 'error',
+      source: 'tiktok-trending-music',
+      endpoint: '/api/tiktok/trending-music/refresh',
+      message: error.message || 'Trending music refresh failed',
+      meta: { country: String(req.body?.country || DEFAULT_COUNTRY).trim().toUpperCase() },
+    }).catch(() => {});
+
     const status = error.statusCode === 502 ? 502 : 500;
     return res.status(status).json({
       error: toUserFacingError(

@@ -1,6 +1,6 @@
 const pool = require('../db/connection');
-const { createClerkClient } = require('@clerk/backend');
 const { ensureUser } = require('../utils/users');
+const { getFullClerkUser, pickPrimaryEmail } = require('../utils/clerkUsers');
 const {
   PLAN_KEYS,
   dodoRequest,
@@ -14,10 +14,6 @@ const {
 } = require('../utils/billing');
 const { getLimitsForSubscription, getUsageSummaryByUserId } = require('../utils/usage');
 
-const clerkClient = createClerkClient({
-  secretKey: process.env.CLERK_SECRET_KEY,
-});
-
 function pickDisplayName(user) {
   const firstName = String(user?.firstName || user?.first_name || '').trim();
   const lastName = String(user?.lastName || user?.last_name || '').trim();
@@ -26,44 +22,6 @@ function pickDisplayName(user) {
   if (user?.username) return user.username;
   if (user?.email) return user.email.split('@')[0];
   return 'Customer';
-}
-
-function pickPrimaryEmail(user) {
-  const directEmail = String(user?.email || '').trim();
-  if (directEmail) return directEmail;
-
-  const primaryEmail =
-    user?.primaryEmailAddress?.emailAddress ||
-    user?.primary_email_address?.email_address ||
-    user?.primary_email_address?.emailAddress ||
-    null;
-  if (primaryEmail) return String(primaryEmail).trim();
-
-  const firstEmailObject = Array.isArray(user?.emailAddresses)
-    ? user.emailAddresses[0]
-    : Array.isArray(user?.email_addresses)
-      ? user.email_addresses[0]
-      : null;
-
-  const fallbackEmail =
-    firstEmailObject?.emailAddress ||
-    firstEmailObject?.email_address ||
-    null;
-
-  return fallbackEmail ? String(fallbackEmail).trim() : '';
-}
-
-async function getFullClerkUser(userId) {
-  const user = await clerkClient.users.getUser(userId);
-  const email = pickPrimaryEmail(user);
-
-  return {
-    id: user.id,
-    email: email || `${user.id}@clerk.local`,
-    username: user.username || null,
-    firstName: user.firstName || user.first_name || null,
-    lastName: user.lastName || user.last_name || null,
-  };
 }
 
 function hadPaidSubscriptionBefore(subscription) {

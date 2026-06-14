@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CubeLoaderOverlay } from '../CubeLoader.jsx';
 import { useAuth } from '@clerk/clerk-react';
 import { useApiToast } from '../../hooks/useApiToast.js';
 import { extractProductFromWebsite, generateFacebookAdCopy, getBrandProfile } from '../../lib/api.js';
+import BulkCreativePanel from './BulkCreativePanel.jsx';
+import { clearBulkCreativeIntel, readBulkCreativeIntel } from '../../lib/bulkCreativeIntel.js';
 
 const HOOK_TEMPLATES = [
   'Nobody talks about this {topic}...',
@@ -110,6 +112,19 @@ export default function FacebookHookGeneratorPanel({ hasProAccess, navigate }) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isAnalyzingWebsite, setIsAnalyzingWebsite] = useState(false);
   const [copyStatus, setCopyStatus] = useState('');
+  const [competitorIntel, setCompetitorIntel] = useState(() => readBulkCreativeIntel());
+  const [showBulkPanel, setShowBulkPanel] = useState(Boolean(readBulkCreativeIntel()));
+
+  useEffect(() => {
+    const intel = readBulkCreativeIntel();
+    if (intel) {
+      setCompetitorIntel(intel);
+      setShowBulkPanel(true);
+      if (intel.winning_angle || intel.winningAngle) {
+        setAngle(String(intel.winning_angle || intel.winningAngle || ''));
+      }
+    }
+  }, []);
 
   const applyProductBrief = (brief = {}) => {
     if (brief.product_name) setProductName(brief.product_name);
@@ -231,6 +246,18 @@ export default function FacebookHookGeneratorPanel({ hasProAccess, navigate }) {
 
   return (
     <div className="space-y-4">
+      {competitorIntel && showBulkPanel ? (
+        <BulkCreativePanel
+          intel={competitorIntel}
+          compact
+          onDismiss={() => {
+            clearBulkCreativeIntel();
+            setCompetitorIntel(null);
+            setShowBulkPanel(false);
+          }}
+        />
+      ) : null}
+
       <div className="rounded-sm border border-white/10 bg-white/[0.02] px-4 py-3">
         <p className="text-xs uppercase tracking-[0.16em] text-[#25d366]">Hook Generator</p>
         <p className="mt-1 text-sm text-white/70">

@@ -39,6 +39,8 @@ import Tutorial from './pages/Tutorial.jsx';
 import DecisionEngine from './pages/DecisionEngine.jsx';
 import CompetitorRadar from './pages/CompetitorRadar.jsx';
 import CompetitorFunnelSpy from './pages/CompetitorFunnelSpy.jsx';
+import CompetitorAngleMap from './pages/CompetitorAngleMap.jsx';
+import Blog from './pages/Blog.jsx';
 import SavedPlans from './pages/SavedPlans.jsx';
 import MonthlySocialMediaPlanner from './components/decision-engine/MonthlySocialMediaPlanner.jsx';
 import { getOnboardingStatus } from './lib/api.js';
@@ -46,6 +48,7 @@ import { useBilling } from './components/billing/BillingContext.jsx';
 import { RequirePaidAccess, RequireProAccess } from './components/billing/BillingRouteGuards.jsx';
 import { CubeLoaderOverlay } from './components/CubeLoader.jsx';
 import { trackPageView } from './lib/firebaseAnalytics.js';
+import AnalyticsBridge from './components/AnalyticsBridge.jsx';
 
 function AppLoadingScreen() {
   return <CubeLoaderOverlay minHeight="100vh" className="min-h-screen bg-[#080808]" />;
@@ -173,8 +176,12 @@ function App() {
   }, [location.pathname, location.search]);
 
   return (
-    <Routes>
+    <>
+      <AnalyticsBridge />
+      <Routes>
       <Route path="/" element={<PublicOnly />} />
+      <Route path="/blog" element={<Blog />} />
+      <Route path="/blog/:slug" element={<Blog />} />
       <Route element={<RequireAuth />}>
         <Route element={<RequireOnboarding />}>
           <Route path="/onboarding" element={<Onboarding />} />
@@ -187,6 +194,7 @@ function App() {
               <Route path="/website" element={<Navigate to="/tiktok/trending" replace />} />
               <Route path="/website/cro-audit" element={<RequireProAccess><CroAudit /></RequireProAccess>} />
               <Route path="/website/funnel-spy" element={<RequireProAccess><CompetitorFunnelSpy /></RequireProAccess>} />
+              <Route path="/website/angle-map" element={<RequireProAccess><CompetitorAngleMap /></RequireProAccess>} />
               <Route path="/website/saved" element={<RequireProAccess><CroAudit /></RequireProAccess>} />
               <Route path="/facebook" element={<Navigate to="/facebook/ads" replace />} />
               <Route path="/facebook/ads" element={<FacebookAds />} />
@@ -255,6 +263,7 @@ function App() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }
 

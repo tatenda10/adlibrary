@@ -1,21 +1,29 @@
+import { AdminCard, AdminPageHeader } from '../components/ui/AdminUi.jsx';
+
 export function SettingsPage() {
   return (
-    <section className="space-y-4">
-      <h3 className="text-xl font-semibold text-white">Settings</h3>
-      <div className="rounded-xl border border-white/10 bg-[#0a0a0a] p-4">
-        <p className="text-sm text-[#9ca3af]">
-          Global admin settings can live here (security, API keys, content moderation rules, and workspace defaults).
-        </p>
-      </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="rounded-xl border border-white/10 bg-[#0a0a0a] p-4">
-          <h4 className="text-sm font-semibold text-white">Security</h4>
-          <p className="mt-2 text-sm text-[#9ca3af]">Rotate admin credentials, session timeout, and audit events.</p>
-        </div>
-        <div className="rounded-xl border border-white/10 bg-[#0a0a0a] p-4">
-          <h4 className="text-sm font-semibold text-white">Content Controls</h4>
-          <p className="mt-2 text-sm text-[#9ca3af]">Review workflow, publishing defaults, and moderation toggles.</p>
-        </div>
+    <section className="mx-auto max-w-6xl space-y-6">
+      <AdminPageHeader
+        eyebrow="Platform"
+        title="Settings"
+        description="Global admin settings: security, API keys, content moderation, and publishing defaults."
+      />
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <AdminCard>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Security</p>
+          <h3 className="mt-2 text-base font-semibold text-white">Admin credentials</h3>
+          <p className="mt-2 text-sm leading-6 text-[#9ca3af]">
+            Rotate admin credentials, session timeout, and audit events.
+          </p>
+        </AdminCard>
+        <AdminCard>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Content</p>
+          <h3 className="mt-2 text-base font-semibold text-white">Publishing controls</h3>
+          <p className="mt-2 text-sm leading-6 text-[#9ca3af]">
+            Review workflow, publishing defaults, and moderation toggles.
+          </p>
+        </AdminCard>
       </div>
     </section>
   );

@@ -169,7 +169,7 @@ function buildTrendsActorInput({
   return input;
 }
 
-async function runApifyActor(actorId, input, limit, { logLabel = 'tiktok-trends' } = {}) {
+async function runApifyActor(actorId, input, limit, { logLabel = 'tiktok-trends', userId = null, endpoint = null } = {}) {
   if (!process.env.APIFY_TOKEN) {
     throw new Error('APIFY_TOKEN is not configured');
   }
@@ -190,6 +190,18 @@ async function runApifyActor(actorId, input, limit, { logLabel = 'tiktok-trends'
       itemCount: list.length,
       input,
     });
+
+    const { recordScrapeFailure } = require('../utils/scrapeIncidents');
+    recordScrapeFailure({
+      userId,
+      source: logLabel,
+      endpoint,
+      runStatus,
+      itemCount: list.length,
+      actor: actorId,
+      runId: run?.id,
+      input,
+    }).catch((err) => console.warn('[observability] incident log failed:', err?.message));
   }
 
   return {

@@ -556,6 +556,14 @@ export function generateFacebookAdCopy(token, payload) {
   });
 }
 
+export function generateBulkCreative(token, payload) {
+  return request('/api/hooks/bulk-creative', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+}
+
 export function extractProductFromWebsite(token, websiteUrl) {
   return request('/api/hooks/product-from-website', {
     method: 'POST',
@@ -764,6 +772,22 @@ export function getPerformanceBenchmarks(token) {
 
 export function getLandingAdMatchScore(token, payload) {
   return request('/api/strategy/landing-ad-match', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(payload || {}),
+  });
+}
+
+export function runCompetitorFunnelSpy(token, payload) {
+  return request('/api/strategy/funnel-spy', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(payload || {}),
+  });
+}
+
+export function runCompetitorsExtractor(token, payload) {
+  return request('/api/strategy/competitors-extractor', {
     method: 'POST',
     headers: authHeaders(token),
     body: JSON.stringify(payload || {}),

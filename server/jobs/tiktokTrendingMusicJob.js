@@ -38,6 +38,12 @@ async function runTrendingMusicDailyCycle() {
 }
 
 function startTikTokTrendingMusicJob() {
+  const enabled = String(process.env.TIKTOK_TRENDING_MUSIC_JOB_ENABLED || '').trim() === '1';
+  if (!enabled) {
+    console.log('[tiktok-trending-music] Daily job disabled (set TIKTOK_TRENDING_MUSIC_JOB_ENABLED=1 to enable).');
+    return null;
+  }
+
   const run = async () => {
     try {
       await runTrendingMusicDailyCycle();
@@ -46,7 +52,7 @@ function startTikTokTrendingMusicJob() {
     }
   };
 
-  run();
+  console.log(`[tiktok-trending-music] Scheduled every ${INTERVAL_MS}ms (no run on startup).`);
   return setInterval(run, INTERVAL_MS);
 }
 

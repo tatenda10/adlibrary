@@ -1,20 +1,33 @@
 import { SignInButton, SignUpButton } from '@clerk/clerk-react';
+import { Link, useLocation } from 'react-router-dom';
 import logo from '../../assets/logo.png';
 
 function Navbar() {
+  const location = useLocation();
+  const isHome = location.pathname === '/';
+  const sectionHref = (id) => (isHome ? `#${id}` : `/#${id}`);
+
   return (
     <header className="sticky top-0 z-50 border-b border-emerald-400/20 bg-emerald-950/50 backdrop-blur-xl">
       <div className="mx-auto flex w-full max-w-[1280px] items-center justify-between gap-2 px-3 py-3 md:gap-3 md:px-6">
-        <div className="flex min-w-0 items-center gap-2 md:gap-3">
+        <Link to="/" className="flex min-w-0 items-center gap-2 md:gap-3">
           <img src={logo} alt="ViralAdLibrary logo" className="h-8 w-8 shrink-0 rounded-full object-cover md:h-9 md:w-9" />
           <span className="truncate text-base font-bold tracking-tight text-white md:text-xl">ViralAdLibrary</span>
-        </div>
+        </Link>
 
         <nav className="hidden items-center gap-7 text-base text-emerald-100/75 md:flex">
-          <a href="#library" className="text-[#25d366]">Library</a>
-          <a href="#features" className="hover:text-white">Features</a>
-          <a href="#pricing" className="hover:text-white">Pricing</a>
-          {/* <a href="#how-it-works" className="hover:text-white">How it works</a> */}
+          <a href={sectionHref('library')} className="text-[#25d366]">
+            Library
+          </a>
+          <a href={sectionHref('features')} className="hover:text-white">
+            Features
+          </a>
+          <a href={sectionHref('pricing')} className="hover:text-white">
+            Pricing
+          </a>
+          <Link to="/blog" className="hover:text-white">
+            Blog
+          </Link>
         </nav>
 
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">

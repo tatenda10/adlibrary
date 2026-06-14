@@ -484,9 +484,136 @@ Return STRICT JSON only:
   }
 }
 
+function normalizeBulkCreativePayload(raw = {}) {
+  const variations = Array.isArray(raw.variations)
+    ? raw.variations
+        .map((item, index) => ({
+          id: String(item?.id || `v-${index + 1}`),
+          angle_label: String(item?.angle_label || item?.angle || '').trim(),
+          hook: String(item?.hook || '').trim(),
+          headline: String(item?.headline || '').trim(),
+          primary_text: String(item?.primary_text || item?.primaryText || '').trim(),
+          cta: String(item?.cta || 'Learn More').trim(),
+        }))
+        .filter((item) => item.hook || item.primary_text)
+    : [];
+
+  return {
+    winning_angle_summary: String(raw.winning_angle_summary || raw.summary || '').trim(),
+    source_competitor: String(raw.source_competitor || '').trim(),
+    variations,
+    test_notes: String(raw.test_notes || raw.notes || '').trim(),
+  };
+}
+
+async function generateBulkCreative(req, res) {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ error: 'GEMINI_API_KEY is not configured' });
+    }
+
+    const {
+      competitorName = '',
+      winningAngle = '',
+      offerNotes = '',
+      landingPageUrl = '',
+      sampleAds = [],
+      brandContext = '',
+      productName = '',
+      productDescription = '',
+      count = 20,
+    } = req.body || {};
+
+    const ads = Array.isArray(sampleAds) ? sampleAds.slice(0, 8) : [];
+    if (!winningAngle.trim() && !ads.length) {
+      return res.status(400).json({ error: 'Provide a winning angle or at least one sample competitor ad.' });
+    }
+
+    const variationCount = Math.min(Math.max(Number(count) || 20, 8), 24);
+    const adCreativeSkill = await loadMarketingSkill('ad-creative');
+
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const modelId = await resolveGeminiModelId();
+
+    const intelBlock = {
+      competitor: String(competitorName || 'Competitor').trim(),
+      winning_angle: String(winningAngle || '').trim(),
+      offer_notes: String(offerNotes || '').trim(),
+      landing_page_url: String(landingPageUrl || '').trim(),
+      sample_ads: ads.map((ad) => ({
+        advertiser: String(ad?.advertiser || '').trim(),
+        title: String(ad?.title || '').trim(),
+        body: String(ad?.body || '').trim(),
+        cta: String(ad?.cta || '').trim(),
+        longevity_days: Number(ad?.longevity_days || 0),
+      })),
+      your_product: {
+        name: String(productName || '').trim(),
+        description: String(productDescription || '').trim(),
+      },
+      brand_context: String(brandContext || '').trim(),
+    };
+
+    const prompt = `You are a performance ad copywriter building bulk Meta ad variations from proven competitor intel.
+
+Use this playbook:
+${String(adCreativeSkill.text || '').slice(0, 8000)}
+
+COMPETITOR INTEL (proven in-market — iterate on these angles, do not copy verbatim):
+${JSON.stringify(intelBlock, null, 2)}
+
+${AD_COPY_GUIDELINES}
+
+Instructions:
+- Generate exactly ${variationCount} distinct ad variations inspired by the competitor intel above.
+- Longevity on sample ads signals what's working — lean into those hooks and offers while making copy original for the user's brand.
+- Each variation must use a meaningfully different hook/angle (pain point, proof, curiosity, contrarian, offer-led, story, etc.).
+- Respect Meta limits: headline ~40 chars, primary text front-load hook in first 125 visible chars, soft CTAs unless offer is explicit.
+- If brand/product context is thin, write adaptable DTC-style copy the user can edit.
+
+Return STRICT JSON only:
+{
+  "winning_angle_summary": "1 sentence on the proven angle you're iterating from",
+  "source_competitor": "competitor name",
+  "variations": [
+    {
+      "id": "v-1",
+      "angle_label": "short angle name",
+      "hook": "opening line",
+      "headline": "Meta headline under 40 chars",
+      "primary_text": "full primary text with \\\\n line breaks",
+      "cta": "Learn More"
+    }
+  ],
+  "test_notes": "2-3 sentences on what to test first"
+}`;
+
+    const model = genAI.getGenerativeModel({
+      model: modelId,
+      generationConfig: { responseMimeType: 'application/json' },
+    });
+    const result = await model.generateContent(prompt);
+    const parsed = normalizeBulkCreativePayload(extractJsonObject(result.response.text()));
+
+    if (!parsed.variations.length) {
+      return res.status(500).json({ error: 'Failed to parse bulk creative variations. Try again.' });
+    }
+
+    return res.json({
+      bulk: parsed,
+      model: modelId,
+      variation_count: parsed.variations.length,
+    });
+  } catch (error) {
+    console.error('generateBulkCreative error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to generate bulk creative.' });
+  }
+}
+
 module.exports = {
   generateHookScript,
   generateFacebookAdCopy,
   extractProductFromWebsite,
+  generateBulkCreative,
 };
 

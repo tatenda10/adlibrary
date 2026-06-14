@@ -64,7 +64,14 @@ function Articles() {
               <h1 className="mt-3 text-2xl font-semibold">{article.title}</h1>
               <p className="mt-2 text-xs app-muted">{article.author} • {new Date(article.published_at || article.created_at).toLocaleDateString()}</p>
               {article.excerpt ? <p className="mt-4 text-sm app-muted">{article.excerpt}</p> : null}
-              <div className="mt-5 whitespace-pre-wrap text-sm leading-7">{article.content}</div>
+              {looksLikeHtml(article.content) ? (
+                <div
+                  className="article-html mt-5 text-sm leading-7 [&_a]:text-emerald-300 [&_img]:my-3 [&_img]:max-w-full"
+                  dangerouslySetInnerHTML={{ __html: article.content }}
+                />
+              ) : (
+                <div className="mt-5 whitespace-pre-wrap text-sm leading-7">{article.content}</div>
+              )}
             </>
           ) : null}
         </article>
@@ -107,3 +114,7 @@ function Articles() {
 }
 
 export default Articles;
+
+function looksLikeHtml(value = '') {
+  return /<\/?[a-z][\s\S]*>/i.test(String(value || ''));
+}

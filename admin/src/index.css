@@ -1,20 +1,111 @@
+@import url('https://fonts.googleapis.com/css2?family=Italianno&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 @import "tailwindcss";
 
-:root {
-  color-scheme: dark;
-  --app-border: #2a2a2a;
-  --app-muted: #a1a1aa;
+body {
+  overflow-y: scroll;
+  /* Enable vertical scrolling */
+  overflow-x: hidden;
+  /* Hide horizontal scrollbar */
+  font-family: 'Inter', Helvetica;  /* Updated to use Inter with Helvetica as fallback */
+  /* Hide the vertical scrollbar */
+  scrollbar-width: none;
+  /* For Firefox */
+  -ms-overflow-style: none;
+  /* For IE and Edge */
+  font-size: small;
 }
 
-body {
-  margin: 0;
-  min-height: 100vh;
-  background: #050505;
+body::-webkit-scrollbar {
+  display: none;
+  /* For Chrome, Safari, and Opera */
+}
+
+.admin-dot-grid {
+  background-color: #050505;
+  background-image:
+    radial-gradient(circle at 25px 25px, rgba(255, 255, 255, 0.03) 2px, transparent 0),
+    radial-gradient(circle at 75px 75px, rgba(255, 255, 255, 0.02) 2px, transparent 0);
+  background-size: 100px 100px;
+}
+
+.admin-glow {
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(34, 197, 94, 0.1), transparent 32%),
+    radial-gradient(circle at 85% 10%, rgba(37, 211, 102, 0.06), transparent 28%);
+}
+
+.admin-quill .ql-toolbar.ql-snow {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: #0f0f10;
+  border-radius: 2px 2px 0 0;
+}
+
+.admin-quill .ql-container.ql-snow {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: #0a0a0a;
+  border-radius: 0 0 2px 2px;
+  min-height: 280px;
+  font-size: 15px;
+}
+
+.admin-quill .ql-editor {
+  min-height: 260px;
   color: #e9edef;
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+}
+
+.admin-quill .ql-snow .ql-stroke {
+  stroke: #9ca3af;
+}
+
+.admin-quill .ql-snow .ql-fill {
+  fill: #9ca3af;
+}
+
+.admin-quill .ql-snow .ql-picker {
+  color: #c6d0db;
+}
+
+.admin-quill .ql-snow .ql-picker-options {
+  background: #111;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Scrollable regions without visible scrollbars */
+.admin-scroll-y {
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.admin-scroll-y::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-scroll-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.admin-scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+.admin-rail {
+  overflow-x: hidden;
+}
+
+.admin-rail-nav {
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.admin-rail-nav::-webkit-scrollbar {
+  display: none;
 }

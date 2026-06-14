@@ -42,6 +42,7 @@ const singleSectionTabs = {
   website: [
     { label: 'Website Research', to: '/website/cro-audit', icon: WebsiteIcon, description: 'Run a fresh CRO audit for any website.' },
     { label: 'Funnel Spy', to: '/website/funnel-spy', icon: DecisionIcon, description: 'Break down competitor ads, landing pages, and post-click funnel mechanics.' },
+    { label: 'Angle Map', to: '/website/angle-map', icon: DecisionIcon, description: 'Map 3–5 brands head-to-head and find ad angles nobody in your category is running.' },
     // { label: 'Competitor Radar', to: '/app/competitor-radar', icon: DecisionIcon, description: 'Map competitors, offers, websites, and audience clues while reviewing your market.' },
     // { label: 'Saved Audits', to: '/website/saved', icon: BookmarkMiniIcon, description: 'Reopen CRO audits saved to your account.' },
   ],

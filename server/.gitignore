@@ -30,6 +30,7 @@ Thumbs.db
 # Local data and uploads
 uploads/
 storage/
+secrets/
 
 # Process / pid files
 *.pid

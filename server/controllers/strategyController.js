@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const pool = require('../db/connection');
 const { getLimitForMetric } = require('../utils/usage');
+const { searchFacebookApifyAds } = require('./facebookController');
+const { crawlHomepageForBrief, normalizeWebsiteUrl } = require('../utils/websiteAudit');
 
 const SKILLS_DIR = path.join(__dirname, '../skills');
 const MARKETING_SKILLS_RAW_BASE = 'https://raw.githubusercontent.com/coreyhaines31/marketingskills/main/skills';
@@ -219,6 +221,129 @@ async function runCompetitorRadar(req, res) {
   } catch (error) {
     console.error('runCompetitorRadar error:', error);
     return res.status(500).json({ error: 'Failed to run competitor radar.' });
+  }
+}
+
+async function runCompetitorFunnelSpy(req, res) {
+  try {
+    const competitorInput = String(req.body?.competitorInput || req.body?.competitor || '').trim();
+    const country = String(req.body?.country || 'US').trim().toUpperCase() || 'US';
+    const limit = Math.min(Math.max(Number(req.body?.limit || 48), 12), 100);
+
+    if (!competitorInput) {
+      return res.status(400).json({ error: 'Competitor brand, page, or Meta Ad Library URL is required.' });
+    }
+
+    const searchPayload = buildFunnelSpySearchPayload(competitorInput);
+    const adData = await searchFacebookApifyAds({
+      keyword: searchPayload.keyword,
+      countries: [country],
+      limit,
+      adType: 'ALL',
+      adActiveStatus: 'ACTIVE',
+      urls: searchPayload.urls,
+      pageUrls: searchPayload.pageUrls,
+      relatedQueries: [],
+      publisherPlatforms: [],
+      mediaType: 'all',
+      languageCodes: [],
+    });
+
+    const ads = Array.isArray(adData?.results) ? adData.results : [];
+    const landingPageClusters = buildLandingPageClusters(ads);
+    const topClusters = landingPageClusters.slice(0, 5);
+    const pageTeardowns = await buildPageTeardowns(topClusters.slice(0, 3));
+    const report = await buildFunnelSpyReport({
+      competitorInput,
+      country,
+      totalAds: ads.length,
+      landingPageClusters,
+      pageTeardowns,
+    });
+
+    return res.json({
+      competitor_input: competitorInput,
+      country,
+      total_ads: ads.length,
+      actor_id: adData?.actorId || '',
+      search_targets: adData?.targets || [],
+      landing_pages: landingPageClusters,
+      page_teardowns: pageTeardowns,
+      report,
+      generated_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('runCompetitorFunnelSpy error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to run competitor funnel spy.' });
+  }
+}
+
+async function runCompetitorsExtractor(req, res) {
+  try {
+    const userId = req.user.id;
+    const rawBrands = Array.isArray(req.body?.brands) ? req.body.brands : [];
+    const brands = [...new Set(rawBrands.map((item) => String(item || '').trim()).filter(Boolean))].slice(0, 5);
+    const category = String(req.body?.category || req.body?.niche || '').trim();
+    const country = String(req.body?.country || 'US').trim().toUpperCase() || 'US';
+    const limit = Math.min(Math.max(Number(req.body?.limit || 24), 12), 48);
+
+    if (brands.length < 3) {
+      return res.status(400).json({ error: 'Add at least 3 competitor brands or Facebook page URLs.' });
+    }
+    if (brands.length > 5) {
+      return res.status(400).json({ error: 'Maximum 5 competitors per angle map.' });
+    }
+
+    const profile = await getBrandProfile(userId);
+    const brandContext = buildBrandContextFromProfile(profile);
+
+    const brandIntel = [];
+    for (const brand of brands) {
+      try {
+        const searchPayload = buildFunnelSpySearchPayload(brand);
+        const adData = await searchFacebookApifyAds({
+          keyword: searchPayload.keyword,
+          countries: [country],
+          limit,
+          adType: 'ALL',
+          adActiveStatus: 'ACTIVE',
+          urls: searchPayload.urls,
+          pageUrls: searchPayload.pageUrls,
+          relatedQueries: [],
+          publisherPlatforms: [],
+          mediaType: 'all',
+          languageCodes: [],
+        });
+        const ads = Array.isArray(adData?.results) ? adData.results : [];
+        brandIntel.push(summarizeBrandAdIntel(brand, ads));
+      } catch (error) {
+        brandIntel.push({
+          brand,
+          ad_count: 0,
+          error: error?.message || 'Failed to pull ads for this brand.',
+          angles: [],
+          top_ads: [],
+        });
+      }
+    }
+
+    const report = await buildCompetitorsExtractorReport({
+      category,
+      country,
+      brandIntel,
+      brandContext,
+    });
+
+    return res.json({
+      category,
+      country,
+      brands: brandIntel,
+      report,
+      generated_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('runCompetitorsExtractor error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to run competitor angle map.' });
   }
 }
 
@@ -1413,6 +1538,470 @@ function sanitizeCompetitorRadar(candidate, fallback, brief, brandContext = {}) 
   };
 }
 
+function summarizeBrandAdIntel(brandName, ads = []) {
+  const sorted = [...ads].sort((a, b) => computeAdLongevityDays(b) - computeAdLongevityDays(a));
+  const angles = new Map();
+
+  for (const ad of sorted) {
+    const body = String((ad.ad_creative_bodies || [])[0] || (ad.captions || [])[0] || '').trim();
+    const title = String((ad.ad_creative_link_titles || [])[0] || '').trim();
+    const cta = String((ad.call_to_action_types || [])[0] || '').trim();
+    const hook = body.split(/[.!?\n]/)[0]?.trim() || title;
+    if (!hook || hook.length < 8) continue;
+
+    const key = hook.slice(0, 80).toLowerCase();
+    const existing = angles.get(key) || {
+      hook,
+      title,
+      cta,
+      ad_count: 0,
+      max_longevity_days: 0,
+      sample_body: body.slice(0, 280),
+    };
+    existing.ad_count += 1;
+    existing.max_longevity_days = Math.max(existing.max_longevity_days, computeAdLongevityDays(ad));
+    angles.set(key, existing);
+  }
+
+  const angleList = [...angles.values()]
+    .sort((a, b) => b.max_longevity_days - a.max_longevity_days || b.ad_count - a.ad_count)
+    .slice(0, 12)
+    .map((item, index) => ({
+      id: `angle-${index + 1}`,
+      hook: item.hook,
+      title: item.title,
+      cta: item.cta,
+      ad_count: item.ad_count,
+      max_longevity_days: item.max_longevity_days,
+      sample_body: item.sample_body,
+    }));
+
+  return {
+    brand: brandName,
+    ad_count: ads.length,
+    angles: angleList,
+    top_ads: sorted.slice(0, 5).map((ad) => ({
+      id: ad.id,
+      advertiser: ad.page_name || ad.title || '',
+      body: String((ad.ad_creative_bodies || [])[0] || '').slice(0, 240),
+      title: String((ad.ad_creative_link_titles || [])[0] || ''),
+      cta: String((ad.call_to_action_types || [])[0] || ''),
+      longevity_days: computeAdLongevityDays(ad),
+    })),
+  };
+}
+
+async function buildCompetitorsExtractorReport({ category, country, brandIntel, brandContext }) {
+  const fallback = buildFallbackCompetitorsExtractorReport({ category, country, brandIntel });
+
+  if (!process.env.CLAUDE_API_KEY) return fallback;
+
+  const prompt = `You are a DTC competitive strategist mapping ad angles across 3-5 brands.
+
+Category / niche: ${category || 'Not specified'}
+Country: ${country}
+Your brand context:
+${JSON.stringify(brandContext, null, 2)}
+
+Per-brand ad intel (active Meta ads, hooks sorted by longevity):
+${JSON.stringify(brandIntel, null, 2)}
+
+Return STRICT JSON only:
+{
+  "summary": "executive summary of the category angle landscape",
+  "crowded_angles": [
+    { "angle": "short label", "brands_using": ["brand a", "brand b"], "why_it_works": "short note" }
+  ],
+  "unique_angles": [
+    { "brand": "brand name", "angle": "short label", "hook_example": "verbatim or paraphrased hook", "longevity_signal": "short note" }
+  ],
+  "open_angles": [
+    { "angle": "angle nobody is running", "why_open": "why this gap matters", "how_to_test": "practical test idea" }
+  ],
+  "recommended_plays": ["action 1", "action 2", "action 3"]
+}
+
+Rules:
+- open_angles must be specific to this category — not generic marketing advice.
+- Base crowded/unique/open angles only on the supplied ad intel; if data is thin, say so in summary.
+- Prefer angles with longevity signals when ranking what's proven.`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.CLAUDE_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+        max_tokens: 4000,
+        temperature: 0.3,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Claude error ${response.status}`);
+    }
+
+    const data = await response.json();
+    const text = data?.content?.map((part) => part.text).join('\n') || '';
+    const parsed = extractJsonObject(text);
+    if (!parsed?.summary) return fallback;
+
+    return {
+      summary: cleanText(parsed.summary, fallback.summary),
+      crowded_angles: Array.isArray(parsed.crowded_angles) ? parsed.crowded_angles.slice(0, 8) : fallback.crowded_angles,
+      unique_angles: Array.isArray(parsed.unique_angles) ? parsed.unique_angles.slice(0, 10) : fallback.unique_angles,
+      open_angles: Array.isArray(parsed.open_angles) ? parsed.open_angles.slice(0, 8) : fallback.open_angles,
+      recommended_plays: normalizeStringList(parsed.recommended_plays, fallback.recommended_plays).slice(0, 6),
+    };
+  } catch (error) {
+    console.error('buildCompetitorsExtractorReport failed:', error);
+    return fallback;
+  }
+}
+
+function buildFallbackCompetitorsExtractorReport({ category, country, brandIntel }) {
+  const hooksByBrand = brandIntel.map((item) => ({
+    brand: item.brand,
+    hooks: (item.angles || []).map((angle) => angle.hook).filter(Boolean),
+  }));
+
+  const hookCounts = new Map();
+  for (const entry of hooksByBrand) {
+    for (const hook of entry.hooks) {
+      const key = hook.slice(0, 60).toLowerCase();
+      const existing = hookCounts.get(key) || { hook, brands: new Set() };
+      existing.brands.add(entry.brand);
+      hookCounts.set(key, existing);
+    }
+  }
+
+  const crowded = [...hookCounts.values()]
+    .filter((item) => item.brands.size >= 2)
+    .slice(0, 5)
+    .map((item) => ({
+      angle: item.hook.slice(0, 80),
+      brands_using: [...item.brands],
+      why_it_works: 'Multiple brands in this set are running similar hooks.',
+    }));
+
+  const unique = brandIntel
+    .flatMap((item) =>
+      (item.angles || []).slice(0, 2).map((angle) => ({
+        brand: item.brand,
+        angle: angle.hook.slice(0, 80),
+        hook_example: angle.hook,
+        longevity_signal: angle.max_longevity_days ? `${angle.max_longevity_days} days live` : 'Recent creative',
+      }))
+    )
+    .slice(0, 6);
+
+  return {
+    summary: `Mapped ${brandIntel.length} brands in ${category || 'this category'} (${country}). Compare crowded hooks vs. angles only one player is testing.`,
+    crowded_angles: crowded,
+    unique_angles: unique,
+    open_angles: [
+      {
+        angle: 'Specific customer pain in their own words',
+        why_open: 'Few brands quote verbatim customer language in hooks.',
+        how_to_test: 'Mine reviews and comments, then lead with the exact phrase in primary text.',
+      },
+    ],
+    recommended_plays: [
+      'Double down on hooks with the longest run-time in this set.',
+      'Test one open angle competitors are not running.',
+      'Feed the strongest open angle into bulk creative variations.',
+    ],
+  };
+}
+
+function buildFunnelSpySearchPayload(competitorInput = '') {
+  const value = String(competitorInput || '').trim();
+  const normalized = value.toLowerCase();
+  if (normalized.includes('facebook.com/ads/library')) {
+    return { keyword: '', urls: [value], pageUrls: [] };
+  }
+  if (normalized.includes('facebook.com/')) {
+    return { keyword: '', urls: [], pageUrls: [value] };
+  }
+  return { keyword: value, urls: [], pageUrls: [] };
+}
+
+function normalizeLandingPageUrl(value = '') {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    const normalized = normalizeWebsiteUrl(raw);
+    const parsed = new URL(normalized);
+    if (/facebook\.com$/i.test(parsed.hostname) || /meta\.com$/i.test(parsed.hostname)) return '';
+    parsed.hash = '';
+    [
+      'utm_source',
+      'utm_medium',
+      'utm_campaign',
+      'utm_term',
+      'utm_content',
+      'fbclid',
+      'gclid',
+      'mc_cid',
+      'mc_eid',
+      'ref',
+      'source',
+      'campaign',
+    ].forEach((param) => parsed.searchParams.delete(param));
+    parsed.search = '';
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return '';
+  }
+}
+
+function parseDateSafe(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function computeAdLongevityDays(ad) {
+  const start = parseDateSafe(ad.ad_delivery_start_time || ad.ad_creation_time);
+  if (!start) return 0;
+  const diffMs = Date.now() - start.getTime();
+  return Math.max(0, Math.round(diffMs / 86400000));
+}
+
+function buildLandingPageClusters(ads = []) {
+  const clusters = new Map();
+
+  for (const ad of ads) {
+    const landingUrl = normalizeLandingPageUrl(ad.external_url || ad.link_url || '');
+    if (!landingUrl) continue;
+
+    const existing = clusters.get(landingUrl) || {
+      url: landingUrl,
+      domain: safeDomain(landingUrl),
+      ad_count: 0,
+      total_longevity_days: 0,
+      max_longevity_days: 0,
+      advertisers: new Set(),
+      ctas: new Set(),
+      platforms: new Set(),
+      video_ads: 0,
+      image_ads: 0,
+      sample_ads: [],
+    };
+
+    const longevity = computeAdLongevityDays(ad);
+    existing.ad_count += 1;
+    existing.total_longevity_days += longevity;
+    existing.max_longevity_days = Math.max(existing.max_longevity_days, longevity);
+    if (ad.page_name) existing.advertisers.add(ad.page_name);
+    (ad.call_to_action_types || []).forEach((cta) => existing.ctas.add(cta));
+    (ad.publisher_platforms || []).forEach((platform) => existing.platforms.add(platform));
+    if (ad.video_url) existing.video_ads += 1;
+    if (ad.image_url) existing.image_ads += 1;
+    if (existing.sample_ads.length < 4) {
+      existing.sample_ads.push({
+        id: ad.id,
+        advertiser: ad.page_name || ad.title || 'Unknown advertiser',
+        title: (ad.ad_creative_link_titles || [])[0] || '',
+        body: (ad.ad_creative_bodies || [])[0] || '',
+        cta: (ad.call_to_action_types || [])[0] || '',
+        image_url: ad.image_url || '',
+        video_url: ad.video_url || '',
+        ad_snapshot_url: ad.ad_snapshot_url || '',
+        longevity_days: longevity,
+      });
+    }
+
+    clusters.set(landingUrl, existing);
+  }
+
+  return [...clusters.values()]
+    .map((cluster) => {
+      const averageLongevityDays = cluster.ad_count
+        ? Math.round(cluster.total_longevity_days / cluster.ad_count)
+        : 0;
+      const score = Math.round(
+        cluster.ad_count * 12
+          + averageLongevityDays * 0.7
+          + cluster.max_longevity_days * 0.4
+          + cluster.video_ads * 2
+      );
+
+      return {
+        url: cluster.url,
+        domain: cluster.domain,
+        ad_count: cluster.ad_count,
+        advertiser_count: cluster.advertisers.size,
+        advertisers: [...cluster.advertisers].slice(0, 8),
+        average_longevity_days: averageLongevityDays,
+        max_longevity_days: cluster.max_longevity_days,
+        score,
+        ctas: [...cluster.ctas].slice(0, 8),
+        platforms: [...cluster.platforms].slice(0, 8),
+        format_mix: {
+          video: cluster.video_ads,
+          static: cluster.image_ads,
+        },
+        sample_ads: cluster.sample_ads,
+      };
+    })
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.ad_count !== a.ad_count) return b.ad_count - a.ad_count;
+      return b.max_longevity_days - a.max_longevity_days;
+    });
+}
+
+function safeDomain(value = '') {
+  try {
+    return new URL(String(value || '')).hostname.replace(/^www\./i, '');
+  } catch {
+    return '';
+  }
+}
+
+async function buildPageTeardowns(clusters = []) {
+  const teardowns = [];
+  for (const cluster of clusters) {
+    try {
+      const brief = await crawlHomepageForBrief(cluster.url);
+      teardowns.push({
+        url: cluster.url,
+        domain: cluster.domain,
+        title: brief?.homepage?.title || '',
+        meta_description: brief?.homepage?.meta_description || '',
+        og_title: brief?.homepage?.og_title || '',
+        og_description: brief?.homepage?.og_description || '',
+        headings: brief?.homepage?.headings || {},
+        ctas: brief?.homepage?.ctas || [],
+        text_excerpt: String(brief?.homepage?.text_excerpt || '').slice(0, 1200),
+      });
+    } catch (error) {
+      teardowns.push({
+        url: cluster.url,
+        domain: cluster.domain,
+        error: error?.message || 'Failed to crawl landing page.',
+        headings: {},
+        ctas: [],
+        text_excerpt: '',
+      });
+    }
+  }
+  return teardowns;
+}
+
+async function buildFunnelSpyReport({ competitorInput, country, totalAds, landingPageClusters, pageTeardowns }) {
+  const fallback = buildFallbackFunnelSpyReport({
+    competitorInput,
+    country,
+    totalAds,
+    landingPageClusters,
+    pageTeardowns,
+  });
+
+  if (!process.env.CLAUDE_API_KEY) return fallback;
+
+  const prompt = `You are a DTC competitor funnel analyst.
+Return STRICT JSON only:
+{
+  "summary": "short executive summary",
+  "top_insights": ["insight 1", "insight 2", "insight 3"],
+  "action_items": ["action 1", "action 2", "action 3"],
+  "winner_takeaways": [
+    {
+      "url": "landing page url",
+      "why_it_matters": "short reason",
+      "offer_observation": "short offer note",
+      "cta_observation": "short CTA note"
+    }
+  ]
+}
+
+Competitor input: ${competitorInput}
+Country: ${country}
+Total ads: ${totalAds}
+Landing page clusters:
+${JSON.stringify(landingPageClusters.slice(0, 5), null, 2)}
+
+Page teardowns:
+${JSON.stringify(pageTeardowns.slice(0, 3), null, 2)}
+
+Keep it concise, practical, and specific to what is present in the provided data.`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.CLAUDE_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+        max_tokens: 1800,
+        temperature: 0.2,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Claude error ${response.status}: ${body}`);
+    }
+
+    const data = await response.json();
+    const text = data?.content?.map((part) => part.text).join('\n') || '';
+    const parsed = extractJsonObject(text);
+    if (!parsed || typeof parsed !== 'object') return fallback;
+    return {
+      summary: cleanText(parsed.summary, fallback.summary),
+      top_insights: normalizeStringList(parsed.top_insights, fallback.top_insights).slice(0, 6),
+      action_items: normalizeStringList(parsed.action_items, fallback.action_items).slice(0, 6),
+      winner_takeaways: Array.isArray(parsed.winner_takeaways) && parsed.winner_takeaways.length
+        ? parsed.winner_takeaways.slice(0, 5).map((item) => ({
+            url: cleanText(item?.url, ''),
+            why_it_matters: cleanText(item?.why_it_matters, ''),
+            offer_observation: cleanText(item?.offer_observation, ''),
+            cta_observation: cleanText(item?.cta_observation, ''),
+          }))
+        : fallback.winner_takeaways,
+      generation_mode: 'ai',
+    };
+  } catch (error) {
+    console.error('buildFunnelSpyReport failed:', error);
+    return fallback;
+  }
+}
+
+function buildFallbackFunnelSpyReport({ competitorInput, country, totalAds, landingPageClusters, pageTeardowns }) {
+  const winners = landingPageClusters.slice(0, 3);
+  return {
+    summary: `Found ${totalAds} active ads for ${competitorInput} in ${country}. The strongest landing pages were ranked by ad support and longevity so the likely winning funnels rise to the top.`,
+    top_insights: winners.map((page) => `${page.domain || page.url} is supported by ${page.ad_count} ads with up to ${page.max_longevity_days} days of run history.`),
+    action_items: [
+      'Review the top-ranked landing pages first before looking at one-off creatives.',
+      'Compare repeated CTAs and headline patterns across the leading pages.',
+      'Borrow the strongest offer framing and post-click structure, not just the ad hooks.',
+    ],
+    winner_takeaways: winners.map((page) => {
+      const teardown = pageTeardowns.find((item) => item.url === page.url);
+      return {
+        url: page.url,
+        why_it_matters: `${page.ad_count} ads point to this page and it shows the strongest support in the account.`,
+        offer_observation: teardown?.meta_description || teardown?.og_description || 'Review the page copy for the main offer and proof stack.',
+        cta_observation: Array.isArray(teardown?.ctas) && teardown.ctas.length
+          ? teardown.ctas.slice(0, 2).join(' | ')
+          : 'Inspect the primary CTA on the landing page.',
+      };
+    }),
+    generation_mode: 'fallback',
+  };
+}
+
 function sanitizeCompetitorItem(item = {}, index = 0) {
   const confidence = String(item.confidence || '').trim().toLowerCase();
   const allowedConfidence = ['high', 'medium', 'low'].includes(confidence) ? confidence : 'low';
@@ -1663,6 +2252,8 @@ module.exports = {
   getAudiencePersonaLens,
   getPerformanceBenchmarks,
   getLandingAdMatchScore,
+  runCompetitorFunnelSpy,
+  runCompetitorsExtractor,
   getSavedPlans,
   createSavedPlan,
   updateSavedPlan,

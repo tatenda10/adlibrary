@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAnalytics, isSupported, logEvent } from 'firebase/analytics';
+import { mirrorProductEvent } from './productAnalytics.js';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
@@ -38,10 +39,12 @@ async function getAnalyticsInstance() {
 }
 
 export async function trackEvent(name, params = {}) {
+  const safeParams = sanitizeParams(params);
+  mirrorProductEvent(name, safeParams).catch(() => {});
   try {
     const analytics = await getAnalyticsInstance();
     if (!analytics) return;
-    logEvent(analytics, name, sanitizeParams(params));
+    logEvent(analytics, name, safeParams);
   } catch {
     // Ignore analytics failures so user flows never break.
   }

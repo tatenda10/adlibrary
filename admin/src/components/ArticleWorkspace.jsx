@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   adminCreateArticle,
   adminDeleteArticle,
@@ -6,6 +7,14 @@ import {
   adminUpdateArticle,
 } from '../lib/api.js';
 import { useAdminAuth } from '../context/AdminAuthContext.jsx';
+import {
+  adminInputClass,
+  AdminAlert,
+  AdminBadge,
+  AdminButton,
+  AdminCard,
+} from './ui/AdminUi.jsx';
+import { RichTextEditor } from './RichTextEditor.jsx';
 
 const EMPTY_FORM = {
   id: null,
@@ -17,9 +26,6 @@ const EMPTY_FORM = {
   status: 'draft',
 };
 
-const fieldClass =
-  'w-full rounded-lg border border-white/10 bg-[#0f0f10] px-3 py-2 text-sm text-white outline-none ring-emerald-500/20 placeholder:text-[#6b7280] focus:border-emerald-500/40 focus:ring-2';
-
 export function ArticleWorkspace({ mode = 'all' }) {
   const { token } = useAdminAuth();
   const [items, setItems] = useState([]);
@@ -27,10 +33,11 @@ export function ArticleWorkspace({ mode = 'all' }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [messageTone, setMessageTone] = useState('info');
   const [imageUrl, setImageUrl] = useState('');
 
-  const isEditing = useMemo(() => Number.isFinite(Number(form.id)), [form.id]);
-  const showEditor = mode !== 'all';
+  const isEditing = useMemo(() => Number(form.id) > 0, [form.id]);
+  const showEditor = mode !== 'all' || isEditing;
   const showList = mode !== 'new';
 
   useEffect(() => {
@@ -41,7 +48,10 @@ export function ArticleWorkspace({ mode = 'all' }) {
         const rows = await adminGetArticles(token);
         if (!cancelled) setItems(Array.isArray(rows) ? rows : []);
       } catch (err) {
-        if (!cancelled) setMessage(err.message || 'Failed to load articles');
+        if (!cancelled) {
+          setMessage(err.message || 'Failed to load articles');
+          setMessageTone('error');
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -54,6 +64,17 @@ export function ArticleWorkspace({ mode = 'all' }) {
 
   const handleSave = async (event) => {
     event.preventDefault();
+    const plainContent = String(form.content || '').replace(/<[^>]+>/g, '').trim();
+    if (!String(form.title || '').trim()) {
+      setMessage('Title is required.');
+      setMessageTone('error');
+      return;
+    }
+    if (!plainContent) {
+      setMessage('Article body is required.');
+      setMessageTone('error');
+      return;
+    }
     try {
       setSaving(true);
       setMessage('');
@@ -71,8 +92,10 @@ export function ArticleWorkspace({ mode = 'all' }) {
       setItems((prev) => [saved, ...prev.filter((item) => item.id !== saved.id)]);
       setForm(EMPTY_FORM);
       setMessage(isEditing ? 'Article updated.' : 'Article created.');
+      setMessageTone('success');
     } catch (err) {
       setMessage(err.message || 'Failed to save article');
+      setMessageTone('error');
     } finally {
       setSaving(false);
     }
@@ -84,8 +107,10 @@ export function ArticleWorkspace({ mode = 'all' }) {
       setItems((prev) => prev.filter((item) => item.id !== id));
       if (Number(form.id) === Number(id)) setForm(EMPTY_FORM);
       setMessage('Article deleted.');
+      setMessageTone('success');
     } catch (err) {
       setMessage(err.message || 'Failed to delete article');
+      setMessageTone('error');
     }
   };
 
@@ -108,7 +133,11 @@ export function ArticleWorkspace({ mode = 'all' }) {
   const addImageByUrl = () => {
     const trimmed = imageUrl.trim();
     if (!trimmed) return;
-    insertAtEnd(`![Article image](${trimmed})`);
+    const snippet = `<p><img src="${trimmed}" alt="Article image" /></p>`;
+    setForm((prev) => ({
+      ...prev,
+      content: prev.content ? `${prev.content}${snippet}` : snippet,
+    }));
     setImageUrl('');
   };
 
@@ -119,7 +148,11 @@ export function ArticleWorkspace({ mode = 'all' }) {
     reader.onload = () => {
       const dataUrl = typeof reader.result === 'string' ? reader.result : '';
       if (dataUrl) {
-        insertAtEnd(`![${file.name}](${dataUrl})`);
+        const snippet = `<p><img src="${dataUrl}" alt="${file.name}" /></p>`;
+        setForm((prev) => ({
+          ...prev,
+          content: prev.content ? `${prev.content}${snippet}` : snippet,
+        }));
       }
     };
     reader.readAsDataURL(file);
@@ -129,146 +162,139 @@ export function ArticleWorkspace({ mode = 'all' }) {
   return (
     <div className="space-y-6">
       {showEditor ? (
-        <form onSubmit={handleSave} className="space-y-3 rounded-xl border border-white/10 bg-[#0a0a0a] p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-white">{isEditing ? 'Edit article' : 'New article'}</h2>
-            {isEditing ? (
-              <button
-                type="button"
-                onClick={resetEditor}
-                className="rounded-md border border-white/15 px-2.5 py-1 text-xs font-medium text-[#d1d5db] hover:bg-white/5"
-              >
-                Clear editor
-              </button>
-            ) : null}
-          </div>
-          <input
-            value={form.title}
-            onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-            placeholder="Title"
-            className={fieldClass}
-          />
-          <input
-            value={form.slug}
-            onChange={(e) => setForm((p) => ({ ...p, slug: e.target.value }))}
-            placeholder="Slug (optional)"
-            className={fieldClass}
-          />
-          <input
-            value={form.excerpt}
-            onChange={(e) => setForm((p) => ({ ...p, excerpt: e.target.value }))}
-            placeholder="Excerpt"
-            className={fieldClass}
-          />
-
-          <div className="rounded-lg border border-white/10 bg-[#0c0c0c] p-3">
-            <p className="mb-2 text-xs uppercase tracking-[0.12em] text-[#7f8ba0]">Content tools</p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={addBulletTemplate}
-                className="rounded-md border border-white/15 px-2.5 py-1 text-xs font-medium text-[#d1d5db] hover:bg-white/5"
-              >
-                Add bullet template
-              </button>
-              <label className="cursor-pointer rounded-md border border-white/15 px-2.5 py-1 text-xs font-medium text-[#d1d5db] hover:bg-white/5">
-                Attach image file
-                <input type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
-              </label>
+        <AdminCard>
+          <form onSubmit={handleSave} className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-white">{isEditing ? 'Edit article' : 'New article'}</p>
+              {isEditing ? (
+                <AdminButton type="button" variant="ghost" onClick={resetEditor}>
+                  Clear editor
+                </AdminButton>
+              ) : null}
             </div>
-            <div className="mt-2 flex gap-2">
-              <input
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="Or paste image URL"
-                className={fieldClass}
-              />
-              <button
-                type="button"
-                onClick={addImageByUrl}
-                className="rounded-md border border-white/15 px-3 py-2 text-xs font-medium text-[#d1d5db] hover:bg-white/5"
-              >
-                Add image
-              </button>
-            </div>
-          </div>
 
-          <textarea
-            value={form.content}
-            onChange={(e) => setForm((p) => ({ ...p, content: e.target.value }))}
-            placeholder="Story content (supports markdown-style bullet points and image tags)"
-            rows={10}
-            className={`${fieldClass} resize-y min-h-[220px]`}
-          />
-          <div className="grid gap-3 md:grid-cols-3">
             <input
-              value={form.author}
-              onChange={(e) => setForm((p) => ({ ...p, author: e.target.value }))}
-              placeholder="Author"
-              className={fieldClass}
+              value={form.title}
+              onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
+              placeholder="Title"
+              className={adminInputClass}
+              required
             />
-            <select
-              value={form.status}
-              onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
-              className={fieldClass}
-            >
-              <option value="draft">Draft</option>
-              <option value="published">Published</option>
-            </select>
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-[#041006] hover:bg-emerald-500 disabled:opacity-60"
-            >
-              {saving ? 'Saving…' : isEditing ? 'Update article' : 'Create article'}
-            </button>
-          </div>
-          {message ? <p className="text-sm text-[#9ca3af]">{message}</p> : null}
-        </form>
+            <input
+              value={form.slug}
+              onChange={(e) => setForm((p) => ({ ...p, slug: e.target.value }))}
+              placeholder="Slug (optional — auto from title if empty)"
+              className={adminInputClass}
+            />
+            <input
+              value={form.excerpt}
+              onChange={(e) => setForm((p) => ({ ...p, excerpt: e.target.value }))}
+              placeholder="Excerpt — shown on blog index"
+              className={adminInputClass}
+            />
+
+            <div className="rounded-sm border border-white/10 bg-black/20 p-4">
+              <p className="text-[11px] uppercase tracking-[0.12em] text-[#7f8ba0]">Content tools</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <AdminButton type="button" variant="ghost" onClick={addBulletTemplate}>
+                  Plain-text bullet template
+                </AdminButton>
+                <label className="cursor-pointer">
+                  <span className="inline-flex rounded-sm border border-white/10 px-3 py-1.5 text-xs font-semibold text-[#d1d5db] hover:bg-white/5">
+                    Attach image file
+                  </span>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
+                </label>
+              </div>
+              <div className="mt-3 flex gap-2">
+                <input
+                  value={imageUrl}
+                  onChange={(e) => setImageUrl(e.target.value)}
+                  placeholder="Or paste image URL"
+                  className={adminInputClass}
+                />
+                <AdminButton type="button" variant="secondary" onClick={addImageByUrl}>
+                  Insert image HTML
+                </AdminButton>
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-[11px] uppercase tracking-[0.12em] text-[#7f8ba0]">Article body</p>
+              <RichTextEditor
+                value={form.content}
+                onChange={(html) => setForm((p) => ({ ...p, content: html }))}
+                placeholder="Write with headings, lists, links, and images…"
+              />
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+              <input
+                value={form.author}
+                onChange={(e) => setForm((p) => ({ ...p, author: e.target.value }))}
+                placeholder="Author"
+                className={adminInputClass}
+              />
+              <select
+                value={form.status}
+                onChange={(e) => setForm((p) => ({ ...p, status: e.target.value }))}
+                className={adminInputClass}
+              >
+                <option value="draft">Draft</option>
+                <option value="published">Published</option>
+              </select>
+              <AdminButton type="submit" disabled={saving} className="md:self-end">
+                {saving ? 'Saving…' : isEditing ? 'Update' : 'Publish / save'}
+              </AdminButton>
+            </div>
+
+            {message ? <AdminAlert tone={messageTone}>{message}</AdminAlert> : null}
+          </form>
+        </AdminCard>
       ) : null}
 
       {showList ? (
-        <section className="rounded-xl border border-white/10 bg-[#0a0a0a] p-4 sm:p-5">
-          <h2 className="text-sm font-semibold text-white">Published & drafts</h2>
-          {loading ? <p className="mt-3 text-sm text-[#9ca3af]">Loading…</p> : null}
+        <AdminCard>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-white">Published & drafts</p>
+            <Link to="/articles/new" className="text-xs font-semibold text-emerald-300 hover:text-emerald-200">
+              + New article
+            </Link>
+          </div>
+
+          {loading ? <p className="mt-4 text-sm text-[#9ca3af]">Loading…</p> : null}
+
           <ul className="mt-4 space-y-2">
             {items.map((item) => (
               <li
                 key={item.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/8 bg-[#070707] px-3 py-2.5"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-white/8 bg-black/20 px-4 py-3"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-white">{item.title}</p>
-                  <p className="text-xs text-[#9ca3af]">
-                    /{item.slug} · {item.status}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-sm font-medium text-white">{item.title}</p>
+                    <AdminBadge tone={item.status === 'published' ? 'success' : 'draft'}>{item.status}</AdminBadge>
+                  </div>
+                  <p className="mt-1 text-xs text-[#7f8ba0]">/{item.slug}</p>
                 </div>
                 <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setForm({ ...item });
-                      if (mode === 'all') {
-                        setMessage('Open "Add Article" to edit this item.');
-                      }
-                    }}
-                    className="rounded-md border border-white/15 px-2.5 py-1 text-xs font-medium text-[#e5e7eb] hover:bg-white/5"
-                  >
+                  <AdminButton type="button" variant="ghost" onClick={() => setForm({ ...item })}>
                     Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(item.id)}
-                    className="rounded-md border border-rose-500/30 px-2.5 py-1 text-xs font-medium text-rose-300 hover:bg-rose-500/10"
-                  >
+                  </AdminButton>
+                  <AdminButton type="button" variant="danger" onClick={() => handleDelete(item.id)}>
                     Delete
-                  </button>
+                  </AdminButton>
                 </div>
               </li>
             ))}
           </ul>
-          {!items.length && !loading ? <p className="mt-3 text-sm text-[#9ca3af]">No articles yet.</p> : null}
-        </section>
+
+          {!items.length && !loading ? (
+            <p className="mt-4 text-sm text-[#9ca3af]">No articles yet. Create your first post.</p>
+          ) : null}
+
+          {message && !showEditor ? <div className="mt-4"><AdminAlert tone={messageTone}>{message}</AdminAlert></div> : null}
+        </AdminCard>
       ) : null}
     </div>
   );

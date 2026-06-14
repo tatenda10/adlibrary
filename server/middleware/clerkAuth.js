@@ -1,5 +1,7 @@
 const { verifyToken } = require('@clerk/backend');
 const { parseBearerToken } = require('../utils/auth');
+const { ensureUser } = require('../utils/users');
+const { touchUserLogin } = require('../utils/observabilityStore');
 
 async function clerkAuth(req, res, next) {
   try {
@@ -23,10 +25,9 @@ async function clerkAuth(req, res, next) {
       username: payload.username || null,
     };
 
-    console.log('[auth] verified user', {
-      id: req.user.id,
-      path: req.path,
-      method: req.method,
+    await ensureUser(req.user);
+    touchUserLogin(req.user.id).catch((err) => {
+      console.warn('[auth] touchUserLogin failed:', err?.message || err);
     });
 
     return next();

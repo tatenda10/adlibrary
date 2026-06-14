@@ -12,6 +12,8 @@ const {
   getAudiencePersonaLens,
   getPerformanceBenchmarks,
   getLandingAdMatchScore,
+  runCompetitorFunnelSpy,
+  runCompetitorsExtractor,
   getSavedPlans,
   createSavedPlan,
   updateSavedPlan,
@@ -34,6 +36,8 @@ router.post('/creative-brief', clerkAuth, hydrateSubscription, requireProSubscri
 router.get('/persona-lens', clerkAuth, hydrateSubscription, requireProSubscription, getAudiencePersonaLens);
 router.get('/benchmarks', clerkAuth, hydrateSubscription, requireProSubscription, getPerformanceBenchmarks);
 router.post('/landing-ad-match', clerkAuth, hydrateSubscription, requireProSubscription, getLandingAdMatchScore);
+router.post('/funnel-spy', clerkAuth, hydrateSubscription, requireProSubscription, runCompetitorFunnelSpy);
+router.post('/competitors-extractor', clerkAuth, hydrateSubscription, requireProSubscription, runCompetitorsExtractor);
 router.get('/saved-plans', clerkAuth, hydrateSubscription, requirePaidSubscription, getSavedPlans);
 router.post('/saved-plans', clerkAuth, hydrateSubscription, requirePaidSubscription, createSavedPlan);
 router.patch('/saved-plans/:id', clerkAuth, hydrateSubscription, requirePaidSubscription, updateSavedPlan);
