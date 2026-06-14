@@ -37,10 +37,13 @@ function normalizeOrigin(value = '') {
 
 const defaultCorsOrigins = [
   process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+  process.env.ADMIN_ORIGIN,
   'http://localhost:5174',
   'https://viraladlibrary.site',
   'https://www.viraladlibrary.site',
-];
+  'https://viraladlibrary.space',
+  'http://188.34.204.116:3002',
+].filter(Boolean);
 const configuredCorsOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map((s) => normalizeOrigin(s)).filter(Boolean)
   : [];
@@ -56,7 +59,8 @@ app.use(
         callback(null, true);
         return;
       }
-      callback(new Error(`CORS blocked for origin: ${origin}`));
+      console.warn(`CORS blocked for origin: ${origin}`);
+      callback(null, false);
     },
     credentials: true,
   })
