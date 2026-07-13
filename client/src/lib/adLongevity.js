@@ -12,6 +12,24 @@ export function computeAdLongevityDays(ad) {
   return Math.max(0, Math.round(diffMs / 86400000));
 }
 
+export function sortAdsByImpressions(ads = []) {
+  return [...ads].sort((a, b) => impressionsSortScore(b) - impressionsSortScore(a));
+}
+
+function impressionsSortScore(ad) {
+  const index = Number(ad?.impressions_index);
+  if (Number.isFinite(index) && index >= 0) return index;
+
+  const text = String(ad?.impressions_text || ad?.impressions || '').trim();
+  const range = text.match(/(\d[\d,]*)\s*-\s*(\d[\d,]*)/);
+  if (range) return Number(range[2].replace(/,/g, '')) || 0;
+
+  const single = text.match(/(\d[\d,]+)/);
+  if (single) return Number(single[1].replace(/,/g, '')) || 0;
+
+  return 0;
+}
+
 export function sortAdsByLongevity(ads = []) {
   return [...ads].sort((a, b) => {
     const longevityDiff = computeAdLongevityDays(b) - computeAdLongevityDays(a);

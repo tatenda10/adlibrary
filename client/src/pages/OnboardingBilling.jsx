@@ -1,19 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useClerk } from '@clerk/clerk-react';
 import { useBilling } from '../components/billing/BillingContext.jsx';
 import { PRICING_PLANS } from '../lib/pricingPlans.js';
 import { CubeLoaderOverlay } from '../components/CubeLoader.jsx';
-import { useApiToast } from '../hooks/useApiToast.js';
-import { showErrorToast, showInfoToast } from '../lib/toast.js';
+import { showInfoToast } from '../lib/toast.js';
 import { trackEvent } from '../lib/firebaseAnalytics.js';
 
 function OnboardingBilling() {
   const navigate = useNavigate();
-  const { signOut } = useClerk();
   const [searchParams, setSearchParams] = useSearchParams();
   const { beginCheckout, refreshBilling, loading, subscription } = useBilling();
-  const { notifyApiError, showWarning } = useApiToast();
   const [actionLoading, setActionLoading] = useState('');
   const [checkoutNotice, setCheckoutNotice] = useState('');
 
@@ -50,7 +46,6 @@ function OnboardingBilling() {
           navigate('/app', { replace: true });
         } else {
           setCheckoutNotice('failed');
-          showErrorToast(null, 'Payment was not completed. Try checkout again or use a different card.');
           const nextParams = new URLSearchParams(searchParams);
           nextParams.delete('checkout');
           setSearchParams(nextParams, { replace: true });
@@ -99,24 +94,12 @@ function OnboardingBilling() {
       await beginCheckout(planKey, { flow: 'onboarding' });
     } catch (err) {
       console.error(err);
-      notifyApiError(err, 'Failed to start checkout. Please try again.');
+      setCheckoutNotice('failed');
       trackEvent('onboarding_billing_checkout_failed', {
         plan_key: planKey,
         error: err?.message || 'checkout_failed',
       });
       setActionLoading('');
-    }
-  };
-
-  const handleSignOut = async () => {
-    try {
-      localStorage.removeItem('pending_checkout_plan');
-      localStorage.removeItem('pending_app_flow');
-      trackEvent('onboarding_billing_signout_clicked', {});
-      await signOut({ redirectUrl: '/' });
-    } catch (err) {
-      console.error(err);
-      showWarning('Failed to sign out. Please try again.');
     }
   };
 
@@ -126,15 +109,6 @@ function OnboardingBilling() {
 
   return (
     <section className="mx-auto flex min-h-screen w-full max-w-[1280px] flex-col px-4 py-8 text-white md:px-6 md:py-12">
-      <div className="mb-3 flex justify-end">
-        <button
-          type="button"
-          onClick={handleSignOut}
-          className="rounded-md border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-white/5"
-        >
-          Sign out
-        </button>
-      </div>
       <div className="rounded-2xl border border-white/10 bg-black/40 p-6 md:p-10">
         {checkoutNotice === 'verifying' ? (
           <CubeLoaderOverlay label="Verifying payment status…" minHeight="12rem" />
@@ -146,23 +120,17 @@ function OnboardingBilling() {
           </div>
         ) : null}
 
+        {checkoutNotice === 'failed' ? (
+          <div className="mb-6 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            Checkout did not complete. Choose a plan below to try again.
+          </div>
+        ) : null}
+
         <div className="mx-auto mt-6 max-w-3xl text-center md:mt-10">
           <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Pricing</p>
           <h2 className="mt-2 text-2xl font-semibold md:text-3xl">
             Choose the plan that matches your research depth and team needs.
           </h2>
-          <p className="mt-3 text-base text-slate-400">
-            Start free if you want to explore first. Starter and Pro are self-serve, and Agency is available through a sales conversation.
-          </p>
-          <div className="mt-5 flex justify-center">
-            <button
-              type="button"
-              onClick={() => navigate('/app', { replace: true })}
-              className="rounded-sm border border-white/12 px-4 py-2 text-sm font-semibold text-white/85 hover:bg-white/5"
-            >
-              Continue on free plan
-            </button>
-          </div>
         </div>
 
         <div className="mt-10 grid gap-6 md:grid-cols-3">

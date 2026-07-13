@@ -1,6 +1,6 @@
 const express = require('express');
 const clerkAuth = require('../middleware/clerkAuth');
-const { hydrateSubscription } = require('../middleware/requireSubscription');
+const { hydrateSubscription, requirePaidSubscription } = require('../middleware/requireSubscription');
 const {
   getBookmarks,
   createBookmark,
@@ -9,8 +9,8 @@ const {
 
 const router = express.Router();
 
-router.get('/', clerkAuth, hydrateSubscription, getBookmarks);
-router.post('/', clerkAuth, hydrateSubscription, createBookmark);
-router.delete('/:id', clerkAuth, hydrateSubscription, deleteBookmark);
+router.get('/', clerkAuth, hydrateSubscription, requirePaidSubscription, getBookmarks);
+router.post('/', clerkAuth, hydrateSubscription, requirePaidSubscription, createBookmark);
+router.delete('/:id', clerkAuth, hydrateSubscription, requirePaidSubscription, deleteBookmark);
 
 module.exports = router;

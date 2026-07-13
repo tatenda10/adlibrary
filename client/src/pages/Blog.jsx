@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Navbar } from '../components/layout/Navbar.jsx';
+import { SiteFooter } from '../components/layout/SiteFooter.jsx';
 import { getArticleBySlug, getArticles } from '../lib/api.js';
-import logo from '../assets/logo.png';
 
 function Blog() {
   const { slug } = useParams();
@@ -144,25 +144,7 @@ function Blog() {
         )}
       </main>
 
-      <footer className="border-t border-white/8 bg-[#050505] py-10">
-        <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-4 px-4 md:flex-row md:items-center md:justify-between md:px-6">
-          <div className="flex items-center gap-3">
-            <img src={logo} alt="ViralAdLibrary logo" className="h-10 w-10 rounded-full object-cover" />
-            <p className="text-sm text-slate-400">© {new Date().getFullYear()} ViralAdLibrary</p>
-          </div>
-          <div className="flex flex-wrap gap-4 text-sm text-slate-300">
-            <Link to="/" className="hover:text-white">
-              Home
-            </Link>
-            <Link to="/blog" className="hover:text-white">
-              Blog
-            </Link>
-            <a href="/#pricing" className="hover:text-white">
-              Pricing
-            </a>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

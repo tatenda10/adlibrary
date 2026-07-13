@@ -1,8 +1,12 @@
 import { getUserFacingError } from './userFacingError.js';
 
-export const API_URL =  'https://viraladlibrary.space';
+//export const API_URL = (
+//    import.meta.env.VITE_API_URL ||
+//  import.meta.env.VITE_API_BASE_URL ||
+//  'http://localhost:5000'
+//).replace(/\/+$/, '');
 
-//export const API_URL = 'http://localhost:5000';
+export const API_URL = 'https://viraladlibrary.space';
 
 function isApifyArtifactUrl(value) {
   const raw = String(value || '').toLowerCase();
@@ -414,6 +418,16 @@ export function deleteBookmark(token, id) {
   });
 }
 
+export function searchFacebookPages(token, { q, countries = ['US'], limit = 10 } = {}) {
+  const params = new URLSearchParams();
+  params.set('q', q);
+  if (countries?.length) params.set('countries', countries.join(','));
+  if (limit) params.set('limit', String(limit));
+  return request(`/api/facebook/pages/search?${params.toString()}`, {
+    headers: authHeaders(token),
+  });
+}
+
 export function searchFacebookAds({
   token,
   keyword,
@@ -507,6 +521,30 @@ export function getOnboardingStatus(token) {
 
 export function saveOnboardingProfile(token, payload) {
   return request('/api/onboarding', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function patchOnboardingProfile(token, payload) {
+  return request('/api/onboarding', {
+    method: 'PATCH',
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function extractOnboardingWebsite(token, payload) {
+  return request('/api/onboarding/extract', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function generateOnboardingVoiceDraft(token, payload = {}) {
+  return request('/api/onboarding/generate-voice', {
     method: 'POST',
     headers: authHeaders(token),
     body: JSON.stringify(payload),

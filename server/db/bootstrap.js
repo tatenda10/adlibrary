@@ -214,6 +214,14 @@ const WATCHLIST_COLUMNS = [
   ['notes', 'ALTER TABLE competitor_watchlist ADD COLUMN notes TEXT DEFAULT NULL'],
 ];
 
+const BRAND_PROFILE_COLUMNS = [
+  ['onboarding_step', 'ALTER TABLE brand_profiles ADD COLUMN onboarding_step TINYINT UNSIGNED NOT NULL DEFAULT 1'],
+  [
+    'onboarding_completed',
+    'ALTER TABLE brand_profiles ADD COLUMN onboarding_completed TINYINT(1) NOT NULL DEFAULT 0',
+  ],
+];
+
 async function ensureColumn(tableName, columnName, alterSql) {
   const [rows] = await pool.query(
     `SELECT COUNT(*) AS total
@@ -233,6 +241,16 @@ async function ensureRuntimeTables() {
   for (const [columnName, alterSql] of WATCHLIST_COLUMNS) {
     await ensureColumn('competitor_watchlist', columnName, alterSql);
   }
+  for (const [columnName, alterSql] of BRAND_PROFILE_COLUMNS) {
+    await ensureColumn('brand_profiles', columnName, alterSql);
+  }
+  await pool.query(
+    `UPDATE brand_profiles
+     SET onboarding_completed = 1, onboarding_step = 4
+     WHERE onboarding_completed = 0
+       AND ((brand_name IS NOT NULL AND TRIM(brand_name) <> '')
+         OR (website_url IS NOT NULL AND TRIM(website_url) <> ''))`
+  );
 }
 
 module.exports = { ensureRuntimeTables };

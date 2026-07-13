@@ -2,13 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CubeLoaderOverlay } from '../components/CubeLoader.jsx';
 import { useBilling } from '../components/billing/BillingContext.jsx';
-import { useApiToast } from '../hooks/useApiToast.js';
-import { showErrorToast, showInfoToast } from '../lib/toast.js';
+import { showInfoToast } from '../lib/toast.js';
 
 function Billing() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { subscription, usage, invoices, plans, loading, beginCheckout, openPortal, refreshBilling } = useBilling();
-  const { notifyApiError } = useApiToast();
   const [actionLoading, setActionLoading] = useState('');
   const [checkoutNotice, setCheckoutNotice] = useState('');
 
@@ -42,8 +40,6 @@ function Billing() {
         setCheckoutNotice(ok ? 'success' : 'failed');
         if (ok) {
           showInfoToast('Payment completed. Your subscription is active.');
-        } else {
-          showErrorToast(null, 'Payment was not completed. Your subscription is still inactive.');
         }
         const nextParams = new URLSearchParams(searchParams);
         nextParams.delete('checkout');
@@ -51,7 +47,6 @@ function Billing() {
       } catch {
         if (!cancelled) {
           setCheckoutNotice('failed');
-          showErrorToast(null, 'Could not verify payment. Check billing or try again.');
           const nextParams = new URLSearchParams(searchParams);
           nextParams.delete('checkout');
           setSearchParams(nextParams, { replace: true });
@@ -97,7 +92,7 @@ function Billing() {
       }
     } catch (err) {
       console.error(err);
-      notifyApiError(err, 'Failed to start checkout. Please try again.');
+      setCheckoutNotice('failed');
       setActionLoading('');
     }
   };
@@ -108,7 +103,6 @@ function Billing() {
       await openPortal();
     } catch (err) {
       console.error(err);
-      notifyApiError(err, 'Failed to open billing portal. Please try again.');
       setActionLoading('');
     }
   };
@@ -137,6 +131,12 @@ function Billing() {
       {checkoutNotice === 'success' ? (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-300">
           Payment completed successfully. Billing status is refreshing.
+        </div>
+      ) : null}
+
+      {checkoutNotice === 'failed' ? (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100">
+          Checkout did not complete. You can try again below.
         </div>
       ) : null}
 

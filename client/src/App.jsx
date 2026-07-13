@@ -32,6 +32,7 @@ import Notes from './pages/Notes.jsx';
 import RedditAds from './pages/RedditAds.jsx';
 import Billing from './pages/Billing.jsx';
 import Onboarding from './pages/Onboarding.jsx';
+import OnboardingUnlock from './pages/OnboardingUnlock.jsx';
 import OnboardingBilling from './pages/OnboardingBilling.jsx';
 import SubscriptionExpired from './pages/SubscriptionExpired.jsx';
 import Settings from './pages/Settings.jsx';
@@ -82,8 +83,7 @@ function PublicOnly() {
   }
 
   if (isSignedIn) {
-    const pendingPlan = typeof window !== 'undefined' ? localStorage.getItem('pending_checkout_plan') : '';
-    return <Navigate to={pendingPlan ? `/onboarding/billing?checkoutPlan=${pendingPlan}` : '/app'} replace />;
+    return <Navigate to="/onboarding" replace />;
   }
 
   return <Landing />;
@@ -149,6 +149,7 @@ function RequireOnboarding() {
 }
 
 function RequireBillingSetup() {
+  const location = useLocation();
   const { loading, subscription } = useBilling();
 
   if (loading) {
@@ -159,7 +160,7 @@ function RequireBillingSetup() {
     if (subscription?.had_subscription_before) {
       return <Navigate to="/subscription-expired" replace />;
     }
-    return <Outlet />;
+    return <Navigate to="/onboarding/billing" replace state={{ from: location.pathname }} />;
   }
 
   return <Outlet />;
@@ -185,62 +186,63 @@ function App() {
       <Route element={<RequireAuth />}>
         <Route element={<RequireOnboarding />}>
           <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="/onboarding/unlock" element={<OnboardingUnlock />} />
           <Route path="/onboarding/billing" element={<OnboardingBilling />} />
           <Route path="/subscription-expired" element={<SubscriptionExpired />} />
           <Route element={<RequireBillingSetup />}>
             <Route element={<DashboardLayout />}>
-              <Route path="/app" element={<Navigate to="/tiktok/trending" replace />} />
+              <Route path="/app" element={<Navigate to="/facebook/ads" replace />} />
               <Route path="/app/cro-audit" element={<Navigate to="/website/cro-audit" replace />} />
-              <Route path="/website" element={<Navigate to="/tiktok/trending" replace />} />
+              <Route path="/website" element={<Navigate to="/facebook/ads" replace />} />
               <Route path="/website/cro-audit" element={<RequireProAccess><CroAudit /></RequireProAccess>} />
               <Route path="/website/funnel-spy" element={<RequireProAccess><CompetitorFunnelSpy /></RequireProAccess>} />
               <Route path="/website/angle-map" element={<RequireProAccess><CompetitorAngleMap /></RequireProAccess>} />
               <Route path="/website/saved" element={<RequireProAccess><CroAudit /></RequireProAccess>} />
               <Route path="/facebook" element={<Navigate to="/facebook/ads" replace />} />
-              <Route path="/facebook/ads" element={<FacebookAds />} />
+              <Route path="/facebook/ads" element={<RequirePaidAccess><FacebookAds /></RequirePaidAccess>} />
               <Route path="/facebook/trending-music" element={<RequirePaidAccess><FacebookAds /></RequirePaidAccess>} />
               <Route path="/facebook/hook-generator" element={<RequirePaidAccess><FacebookAds /></RequirePaidAccess>} />
-              <Route path="/facebook/workspace" element={<FacebookWorkspace />} />
+              <Route path="/facebook/workspace" element={<RequirePaidAccess><FacebookWorkspace /></RequirePaidAccess>} />
               <Route
                 path="/facebook/workspace/:folderId"
-                element={<FacebookWorkspaceFolder />}
+                element={<RequirePaidAccess><FacebookWorkspaceFolder /></RequirePaidAccess>}
               />
               {/* <Route path="/facebook/groups" element={<RequirePaidAccess><FacebookAds /></RequirePaidAccess>} /> */}
               {/* <Route path="/facebook/followers" element={<RequirePaidAccess><FacebookAds /></RequirePaidAccess>} /> */}
               <Route path="/instagram" element={<Navigate to="/instagram/posts" replace />} />
-              <Route path="/instagram/posts" element={<InstagramAds />} />
-              <Route path="/instagram/reels" element={<InstagramAds />} />
+              <Route path="/instagram/posts" element={<RequirePaidAccess><InstagramAds /></RequirePaidAccess>} />
+              <Route path="/instagram/reels" element={<RequirePaidAccess><InstagramAds /></RequirePaidAccess>} />
               <Route path="/instagram/trending" element={<RequirePaidAccess><InstagramTrending /></RequirePaidAccess>} />
               <Route path="/instagram/analysis/:key" element={<TikTokAnalysisPage />} />
-              <Route path="/instagram/workspace" element={<InstagramWorkspace />} />
+              <Route path="/instagram/workspace" element={<RequirePaidAccess><InstagramWorkspace /></RequirePaidAccess>} />
               <Route
                 path="/instagram/workspace/:folderId"
-                element={<InstagramWorkspaceFolder />}
+                element={<RequirePaidAccess><InstagramWorkspaceFolder /></RequirePaidAccess>}
               />
               <Route path="/linkedin" element={<Navigate to="/articles" replace />} />
               <Route path="/articles" element={<RequirePaidAccess><Articles /></RequirePaidAccess>} />
               <Route path="/articles/:slug" element={<RequirePaidAccess><Articles /></RequirePaidAccess>} />
               <Route path="/google-ads" element={<RequirePaidAccess><GoogleAds /></RequirePaidAccess>} />
               <Route path="/reddit" element={<RequirePaidAccess><RedditAds /></RequirePaidAccess>} />
-              <Route path="/tiktok/trending" element={<TikTokTrending />} />
+              <Route path="/tiktok/trending" element={<RequirePaidAccess><TikTokTrending /></RequirePaidAccess>} />
               <Route path="/tiktok/hot-takes" element={<RequirePaidAccess><TikTokHotTakes /></RequirePaidAccess>} />
               <Route path="/tiktok/creators" element={<RequirePaidAccess><TikTokCreators /></RequirePaidAccess>} />
               {/* <Route path="/tiktok/trending-hashtags" element={<RequirePaidAccess><TikTokTrendingHashtags /></RequirePaidAccess>} /> */}
               <Route path="/tiktok/knowledge-hub" element={<Navigate to="/tiktok/hooks" replace />} />
               <Route path="/tiktok/hooks" element={<RequireProAccess><TikTokHooks /></RequireProAccess>} />
-              <Route path="/tiktok/workspace" element={<TikTokWorkspace />} />
+              <Route path="/tiktok/workspace" element={<RequirePaidAccess><TikTokWorkspace /></RequirePaidAccess>} />
               <Route
                 path="/tiktok/workspace/:folderId"
-                element={<TikTokWorkspaceFolder />}
+                element={<RequirePaidAccess><TikTokWorkspaceFolder /></RequirePaidAccess>}
               />
               {/* <Route path="/tiktok/saved" element={<RequirePaidAccess><TikTokSaved /></RequirePaidAccess>} /> */}
               {/* <Route path="/tiktok/for-you" element={<RequireProAccess><TikTokForYou /></RequireProAccess>} /> */}
-              <Route path="/tiktok/trending-music" element={<TikTokTrendingMusic />} />
+              <Route path="/tiktok/trending-music" element={<RequirePaidAccess><TikTokTrendingMusic /></RequirePaidAccess>} />
               <Route path="/tiktok/predictor" element={<RequireProAccess><TikTokPredictor /></RequireProAccess>} />
               {/* <Route path="/tiktok/collections" element={<RequirePaidAccess><TikTokCollectionsIndex /></RequirePaidAccess>} /> */}
               {/* <Route path="/tiktok/collections/:id" element={<RequirePaidAccess><TikTokCollectionPage /></RequirePaidAccess>} /> */}
               <Route path="/tiktok/analysis/:key" element={<TikTokAnalysisPage />} />
-              <Route path="/bookmarks" element={<Bookmarks />} />
+              <Route path="/bookmarks" element={<RequirePaidAccess><Bookmarks /></RequirePaidAccess>} />
               <Route path="/notes" element={<RequirePaidAccess><Notes /></RequirePaidAccess>} />
               <Route path="/app/decision-engine" element={<RequirePaidAccess><DecisionEngine /></RequirePaidAccess>} />
               <Route path="/app/competitor-analysis" element={<RequireProAccess><CompetitorRadar /></RequireProAccess>} />

@@ -6,7 +6,7 @@ import { CubeLoaderOverlay } from '../components/CubeLoader.jsx';
 import useSearch from '../hooks/useSearch.js';
 import useBookmarks from '../hooks/useBookmarks.js';
 import { keyForVideo, storeAnalysisRecord } from '../lib/analysis-store.js';
-import { createCollection, getCollection, updateCollection, isBillingOrQuotaError } from '../lib/api.js';
+import { createCollection, getCollection, updateCollection, isBillingOrQuotaError, buildTikTokStreamUrl } from '../lib/api.js';
 import { useApiToast } from '../hooks/useApiToast.js';
 const FREE_RESULT_LIMIT = 8;
 
@@ -32,6 +32,7 @@ function TikTokTrending() {
   const [analyzingKey, setAnalyzingKey] = useState('');
   const [savingKey, setSavingKey] = useState('');
   const [playbackErrors, setPlaybackErrors] = useState({});
+  const [modalPlaybackFailed, setModalPlaybackFailed] = useState(false);
   const [activeVideo, setActiveVideo] = useState(null);
   const hydratedCollectionId = useRef('');
 
@@ -40,6 +41,10 @@ function TikTokTrending() {
   const { bookmarks, saveBookmark } = useBookmarks({ autoLoad: true });
 
   const savedUrls = useMemo(() => new Set(bookmarks.map((item) => item.tiktok_url)), [bookmarks]);
+  const activeVideoStreamUrl = useMemo(
+    () => (activeVideo ? resolveVideoStreamUrl(activeVideo) : ''),
+    [activeVideo],
+  );
   const hasProAccess = Boolean(subscription?.is_pro);
   const hasPaidPlan = Boolean(subscription?.is_active);
   const limitOptions = hasPaidPlan ? [12, 20, 32, 40] : [FREE_RESULT_LIMIT];
@@ -77,6 +82,10 @@ function TikTokTrending() {
     const timer = window.setTimeout(() => setCollectionToast(''), 2200);
     return () => window.clearTimeout(timer);
   }, [collectionToast]);
+
+  useEffect(() => {
+    setModalPlaybackFailed(false);
+  }, [activeVideo]);
 
   useEffect(() => {
     if (!activeVideo) return undefined;
@@ -521,11 +530,24 @@ function TikTokTrending() {
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,420px)_1fr]">
               <div className="overflow-hidden rounded-xl bg-black">
-                {buildTikTokEmbedUrl(activeVideo.url) ? (
+                {activeVideoStreamUrl && !modalPlaybackFailed ? (
+                  <video
+                    key={activeVideoStreamUrl}
+                    src={activeVideoStreamUrl}
+                    controls
+                    autoPlay
+                    muted
+                    playsInline
+                    preload="auto"
+                    poster={activeVideo.thumbnail || undefined}
+                    className="h-[70vh] min-h-[540px] w-full bg-black object-contain"
+                    onError={() => setModalPlaybackFailed(true)}
+                  />
+                ) : buildTikTokEmbedUrl(activeVideo.url) ? (
                   <iframe
                     src={buildTikTokEmbedUrl(activeVideo.url)}
                     title={activeVideo.caption || 'TikTok video player'}
-                    allow="autoplay; encrypted-media"
+                    allow="autoplay; encrypted-media; fullscreen"
                     allowFullScreen
                     className="h-[70vh] min-h-[540px] w-full border-0"
                   />
@@ -721,13 +743,17 @@ function readBusinessProfile() {
 }
 
 function resolveVideoStreamUrl(video = {}) {
-  return (
+  const proxied =
     video.videoStreamUrl ||
     video.video_stream_url ||
+    '';
+  if (proxied) return proxied;
+
+  const source =
     video.sourceVideoStreamUrl ||
     video.source_video_stream_url ||
-    ''
-  );
+    '';
+  return buildTikTokStreamUrl(source) || source;
 }
 
 function buildTikTokEmbedUrl(url = '') {

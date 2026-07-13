@@ -5,7 +5,7 @@ import {
   getUsageDetailFromError,
   shouldShowBillingLimitModal,
 } from './billingErrors.js';
-import { getToastErrorMessage, TOAST_FALLBACKS } from './userFacingError.js';
+import { getToastErrorMessage, isGenericToastMessage, TOAST_FALLBACKS } from './userFacingError.js';
 
 const DEFAULT_ERROR_DURATION = 5200;
 const DEFAULT_SUCCESS_DURATION = 3200;
@@ -33,6 +33,11 @@ export function showErrorToast(messageOrErr, fallback = TOAST_FALLBACKS.generic,
       : getToastErrorMessage(messageOrErr, fallback);
 
   if (!message || options.silent) return;
+
+  if (!options.force && isGenericToastMessage(message)) {
+    console.warn('[toast suppressed]', message);
+    return;
+  }
 
   toast.error(message, {
     duration: options.duration ?? DEFAULT_ERROR_DURATION,
@@ -73,6 +78,12 @@ export function handleApiError(err, fallback = TOAST_FALLBACKS.generic, options 
   }
 
   if (options.ignoreNotFound && Number(err?.status) === 404) {
+    return false;
+  }
+
+  const message = getToastErrorMessage(err, fallback);
+  if (!options.force && isGenericToastMessage(message)) {
+    console.error('[api error suppressed]', err);
     return false;
   }
 

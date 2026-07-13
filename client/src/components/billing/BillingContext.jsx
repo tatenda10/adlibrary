@@ -5,7 +5,6 @@ import {
   createBillingPortalSession,
   getBillingStatus as fetchBillingStatus,
 } from '../../lib/api.js';
-import { showErrorToast } from '../../lib/toast.js';
 
 const BillingContext = createContext(null);
 const BILLING_DEBUG = true;
@@ -77,7 +76,6 @@ export function BillingProvider({ children }) {
       if (BILLING_DEBUG) {
         console.log('[BillingContext] refreshBilling failed:', err?.message || err);
       }
-      showErrorToast(err, 'Could not load billing. Refresh the page and try again.');
       setBilling({ subscription: defaultSubscription(), invoices: [], plans: [], usage: null });
       return null;
     } finally {

@@ -1,4 +1,5 @@
 const { ApifyClient } = require('apify-client');
+const { searchFacebookPages } = require('../utils/facebookPageSearch');
 
 const FACEBOOK_BASE_URL = 'https://www.facebook.com';
 const META_AD_LIBRARY_URL = `${FACEBOOK_BASE_URL}/ads/library/`;
@@ -6,7 +7,7 @@ const META_AD_LIBRARY_URL = `${FACEBOOK_BASE_URL}/ads/library/`;
 const DEFAULT_FACEBOOK_ADS_ACTOR_ID =
   process.env.APIFY_FACEBOOK_AD_LIBRARY_ACTOR ||
   process.env.APIFY_FACEBOOK_ADS_ACTOR ||
-  'curious_coder/facebook-ads-library-scraper';
+  'apify/facebook-ads-scraper';
 const VALID_PUBLISHER_PLATFORMS = new Set([
   'facebook',
   'instagram',
@@ -84,19 +85,33 @@ function normalizeApifyPublisherPlatforms(platforms) {
   ).filter((value) => VALID_PUBLISHER_PLATFORMS.has(value));
 }
 
-/** Curious Coder facebook-ads-library-scraper row shape (ad_archive_id + snapshot). */
-function isCuriousCoderAdLibraryRow(item) {
-  return Boolean(item && typeof item === 'object' && (item.ad_archive_id || item.ad_library_url) && item.snapshot);
+/** Apify Ad Library row shape (snapshot + archive id). */
+function isApifySnapshotAdRow(item) {
+  return Boolean(
+    item &&
+      typeof item === 'object' &&
+      item.snapshot &&
+      (item.ad_archive_id ||
+        item.adArchiveId ||
+        item.adArchiveID ||
+        item.ad_library_url ||
+        item.adLibraryUrl)
+  );
 }
 
-function extractCuriousCoderVideoUrls(item) {
+function extractSnapshotVideoUrls(item) {
   const videos = getByPath(item, 'snapshot.videos');
-  if (!Array.isArray(videos)) return { hd: '', sd: '', preview: '' };
+  if (!Array.isArray(videos) || !videos.length) return { hd: '', sd: '', preview: '' };
   const first = videos[0] || {};
   return {
-    hd: pickFirst(first.video_hd_url, first.videoHdUrl),
-    sd: pickFirst(first.video_sd_url, first.videoSdUrl),
-    preview: pickFirst(first.video_preview_image_url, first.videoPreviewImageUrl, first.thumbnail_url),
+    hd: pickFirst(first.video_hd_url, first.videoHdUrl, first.watermarkedVideoHdUrl),
+    sd: pickFirst(first.video_sd_url, first.videoSdUrl, first.watermarkedVideoSdUrl),
+    preview: pickFirst(
+      first.video_preview_image_url,
+      first.videoPreviewImageUrl,
+      first.thumbnail_url,
+      first.thumbnailUrl
+    ),
   };
 }
 
@@ -116,10 +131,10 @@ function pickAdExternalUrl(item) {
 }
 
 function extractFacebookMediaAssets(item) {
-  const curiousVideos = isCuriousCoderAdLibraryRow(item) ? extractCuriousCoderVideoUrls(item) : null;
+  const snapshotVideos = isApifySnapshotAdRow(item) ? extractSnapshotVideoUrls(item) : null;
   const urls = dedupeStrings([
-    ...(curiousVideos
-      ? [curiousVideos.preview, curiousVideos.hd, curiousVideos.sd].filter(Boolean)
+    ...(snapshotVideos
+      ? [snapshotVideos.preview, snapshotVideos.hd, snapshotVideos.sd].filter(Boolean)
       : []),
     pickNested(item, ['snapshot.page_profile_picture_url', 'snapshot.pageProfilePictureUrl']),
     ...arrayFromPaths(item, [
@@ -151,8 +166,11 @@ function extractFacebookMediaAssets(item) {
       'videoUrl',
       'video_url',
       'snapshot.videos.0.video_hd_url',
+      'snapshot.videos.0.videoHdUrl',
       'snapshot.videos.0.video_sd_url',
+      'snapshot.videos.0.videoSdUrl',
       'snapshot.videos.0.video_preview_image_url',
+      'snapshot.videos.0.videoPreviewImageUrl',
       'creative.videoUrl',
       'creative.video.url',
       'ad_content.videoUrl',
@@ -753,9 +771,17 @@ function normalizeFacebookAdItem(item, index) {
   const mediaAssets = extractFacebookMediaAssets(item);
   const imageUrls = mediaAssets.filter((asset) => asset.type === 'image').map((asset) => asset.url);
   const videoUrls = mediaAssets.filter((asset) => asset.type === 'video').map((asset) => asset.url);
-  const curiousVideos = isCuriousCoderAdLibraryRow(item) ? extractCuriousCoderVideoUrls(item) : null;
+  const snapshotVideos = isApifySnapshotAdRow(item) ? extractSnapshotVideoUrls(item) : null;
+  const archiveId = pickNested(item, [
+    'ad_archive_id',
+    'adArchiveId',
+    'adArchiveID',
+    'adArchive.id',
+    'metadata.adArchiveId',
+  ]);
   const publisherPlatforms = normalizeApifyPublisherPlatforms(
-    getByPath(item, 'publisher_platform') ||
+    getByPath(item, 'publisherPlatform') ||
+      getByPath(item, 'publisher_platform') ||
       getByPath(item, 'publisher_platforms') ||
       arrayFromPaths(item, [
         'publisherPlatforms',
@@ -787,19 +813,16 @@ function normalizeFacebookAdItem(item, index) {
   ]);
   const snapshotCaption = pickNested(item, ['snapshot.caption', 'caption']);
   const snapshotCta = pickNested(item, ['snapshot.cta_text', 'snapshot.cta_type', 'call_to_action_type']);
-  const adLibraryUrl = pickNested(item, ['ad_library_url', 'adLibraryUrl']);
+  const adLibraryUrl = pickFirst(
+    pickNested(item, ['ad_library_url', 'adLibraryUrl']),
+    buildMetaAdLibraryIdUrl(archiveId)
+  );
   const landingUrl = pickAdExternalUrl(item);
+  const impressionsIndexRaw = getByPath(item, 'impressionsWithIndex.impressionsIndex');
+  const impressionsIndex = Number.isFinite(Number(impressionsIndexRaw)) ? Number(impressionsIndexRaw) : -1;
 
   return {
-    id: pickNested(item, [
-      'ad_archive_id',
-      'id',
-      'adArchiveId',
-      'adArchiveID',
-      'adArchive.id',
-      'metadata.adArchiveId',
-      'metadata.adArchiveID',
-    ]) || `fb-ad-${index}`,
+    id: archiveId || pickNested(item, ['id', 'adArchive.id', 'metadata.adArchiveID']) || `fb-ad-${index}`,
     kind: 'ad',
     title: pickNested(item, [
       'page_name',
@@ -812,11 +835,21 @@ function normalizeFacebookAdItem(item, index) {
       'advertiser',
     ]) || creativeTitle || 'Unknown advertiser',
     subtitle: pickNested(item, ['page_id', 'pageId', 'snapshot.page_id', 'metadata.pageId', 'pageInfo.page.id', 'page.id']),
-    page_id: pickNested(item, ['page_id', 'pageId', 'snapshot.page_id', 'metadata.pageId', 'pageInfo.page.id', 'page.id']),
+    page_id: pickNested(item, [
+      'page_id',
+      'pageId',
+      'pageID',
+      'snapshot.page_id',
+      'snapshot.pageId',
+      'metadata.pageId',
+      'pageInfo.page.id',
+      'page.id',
+    ]),
     page_name: pickNested(item, [
       'page_name',
       'pageName',
       'snapshot.page_name',
+      'snapshot.pageName',
       'metadata.pageName',
       'pageInfo.page.name',
       'page.name',
@@ -894,21 +927,37 @@ function normalizeFacebookAdItem(item, index) {
     publisher_platforms: publisherPlatforms,
     languages,
     spend: getByPath(item, 'performance.spend') || item.spend || null,
-    impressions: getByPath(item, 'performance.impressions') || item.impressions || null,
+    impressions:
+      getByPath(item, 'performance.impressions') ||
+      getByPath(item, 'impressionsWithIndex.impressionsText') ||
+      item.impressions ||
+      null,
+    impressions_index: impressionsIndex,
+    impressions_text: pickNested(item, [
+      'impressionsWithIndex.impressionsText',
+      'impressions_with_index.impressions_text',
+    ]),
     currency: pickNested(item, ['currency', 'performance.spend.currency']),
     image_url:
-      curiousVideos?.preview ||
+      snapshotVideos?.preview ||
       imageUrls[0] ||
       pickFirst(
         item.image_url,
         item.imageUrl,
         item.thumbnailUrl,
         item.thumbnail_url,
-        pickNested(item, ['snapshot.page_profile_picture_url', 'snapshot.url', 'snapshot.imageUrl', 'snapshot.image_url', 'creative.imageUrl'])
+        pickNested(item, [
+          'snapshot.page_profile_picture_url',
+          'snapshot.pageProfilePictureUrl',
+          'snapshot.url',
+          'snapshot.imageUrl',
+          'snapshot.image_url',
+          'creative.imageUrl',
+        ])
       ),
     video_url:
-      curiousVideos?.hd ||
-      curiousVideos?.sd ||
+      snapshotVideos?.hd ||
+      snapshotVideos?.sd ||
       videoUrls[0] ||
       pickFirst(
         item.video_url,
@@ -918,8 +967,13 @@ function normalizeFacebookAdItem(item, index) {
         pickNested(item, ['snapshot.videoUrl', 'snapshot.video_url', 'creative.videoUrl'])
       ),
     media_assets: mediaAssets.slice(0, 6),
-    page_url: pickNested(item, ['snapshot.page_profile_uri', 'pageInfo.page.url', 'page.url']),
-    display_format: pickNested(item, ['snapshot.display_format', 'display_format']),
+    page_url: pickNested(item, [
+      'snapshot.page_profile_uri',
+      'snapshot.pageProfileUri',
+      'pageInfo.page.url',
+      'page.url',
+    ]),
+    display_format: pickNested(item, ['snapshot.display_format', 'snapshot.displayFormat', 'display_format']),
     is_active: item.is_active === true || item.is_active === 'true',
     input_url: pickNested(item, ['inputUrl']),
     normalized_source: pickNested(item, [
@@ -1351,8 +1405,86 @@ async function intelligentSearchFacebookAds(req, res) {
   }
 }
 
+async function searchFacebookPagesHandler(req, res) {
+  try {
+    const query = String(req.query?.q || req.query?.query || '').trim();
+    if (!query) {
+      return res.status(400).json({ error: 'q is required' });
+    }
+
+    const countries = req.query?.countries
+      ? String(req.query.countries)
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : ['US'];
+    const limit = Number(req.query?.limit || 10);
+
+    const pages = await searchFacebookPages(query, { countries, limit });
+    return res.json({
+      query,
+      pages,
+      sources: [...new Set(pages.map((page) => page.source))],
+    });
+  } catch (error) {
+    console.error('searchFacebookPagesHandler error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to search Facebook pages' });
+  }
+}
+
+async function proxyFacebookMedia(req, res) {
+  try {
+    const target = String(req.query?.url || '').trim();
+    if (!target) {
+      return res.status(400).send('url is required');
+    }
+
+    let parsed;
+    try {
+      parsed = new URL(target);
+    } catch {
+      return res.status(400).send('Invalid media URL');
+    }
+
+    const hostname = parsed.hostname.toLowerCase();
+    const allowed = ['fbcdn.net', 'facebook.com', 'fb.com', 'fbsbx.com'].some(
+      (suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`)
+    );
+
+    if (!allowed) {
+      return res.status(403).send('Unsupported media host');
+    }
+
+    const upstream = await fetch(parsed.toString(), {
+      headers: {
+        'user-agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        referer: 'https://www.facebook.com/',
+      },
+    });
+
+    if (!upstream.ok) {
+      const body = await upstream.text().catch(() => '');
+      return res.status(upstream.status).send(body || 'Failed to fetch media');
+    }
+
+    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+    const cacheControl = upstream.headers.get('cache-control') || 'public, max-age=3600';
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+
+    res.setHeader('content-type', contentType);
+    res.setHeader('cache-control', cacheControl);
+    return res.send(buffer);
+  } catch (error) {
+    console.error('proxyFacebookMedia error:', error);
+    return res.status(502).send('Failed to proxy Facebook media');
+  }
+}
+
 module.exports = {
   searchFacebookAds,
   intelligentSearchFacebookAds,
   searchFacebookApifyAds,
+  searchFacebookPagesHandler,
+  proxyFacebookMedia,
 };

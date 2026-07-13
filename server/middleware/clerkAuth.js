@@ -15,6 +15,11 @@ async function clerkAuth(req, res, next) {
       return res.status(401).json({ error: 'Missing Bearer token' });
     }
 
+    if (!process.env.CLERK_SECRET_KEY) {
+      console.warn('[auth] CLERK_SECRET_KEY is not set');
+      return res.status(500).json({ error: 'Auth is not configured on the server' });
+    }
+
     const payload = await verifyToken(token, {
       secretKey: process.env.CLERK_SECRET_KEY,
     });

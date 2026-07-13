@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS brand_profiles (
   tone JSON,
   value_props JSON,
   content_pillars JSON,
+  onboarding_step TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  onboarding_completed TINYINT(1) NOT NULL DEFAULT 0,
   last_scraped_at TIMESTAMP NULL DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

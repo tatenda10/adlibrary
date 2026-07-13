@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SignInButton, SignUpButton } from '@clerk/clerk-react';
 import { Navbar } from '../components/layout/Navbar.jsx';
+import { SiteFooter } from '../components/layout/SiteFooter.jsx';
 import WebsiteAnalysisPreviewModal from '../components/WebsiteAnalysisPreviewModal.jsx';
 import { MOCK_ADS } from '../lib/mock-data.js';
 import { AdCard } from '../components/ui/AdCard.jsx';
@@ -9,7 +10,6 @@ import {
 } from '../lib/api.js';
 import { PRICING_PLANS } from '../lib/pricingPlans.js';
 import { submitSupportMessage } from '../lib/api.js';
-import logo from '../assets/logo.png';
 import { trackEvent } from '../lib/firebaseAnalytics.js';
 
 const NICHES = ['All', 'E-commerce', 'SaaS', 'Health', 'Tech', 'Fintech'];
@@ -447,84 +447,7 @@ function Landing() {
         </div>
       </section>
 
-      {/*
-      <section id="how-it-works" className="border-b border-white/8 bg-[#050505] py-14">
-        <div className="mx-auto w-full max-w-[1280px] px-4 md:px-6">
-          <div className="max-w-2xl">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">How it works</p>
-            <h2 className="mt-2 text-3xl font-semibold md:text-4xl">See the workflow in one quick walkthrough.</h2>
-            <p className="mt-3 text-base text-slate-400">
-              We will place your product walkthrough video here. For now, this section is on standby and ready for a YouTube link.
-            </p>
-          </div>
-
-          <div className="mt-7 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
-            <div className="aspect-video w-full bg-[radial-gradient(circle_at_18%_24%,rgba(34,197,94,0.16),transparent_36%),linear-gradient(180deg,#0a0a0a_0%,#050505_100%)] p-6 md:p-8">
-              <div className="flex h-full w-full items-center justify-center rounded-xl border border-dashed border-emerald-300/30 bg-black/35 text-center">
-                <div className="max-w-xl px-4">
-                  <p className="text-sm font-semibold text-emerald-300">Video placeholder</p>
-                  <p className="mt-2 text-sm text-slate-300">
-                    Standby mode: add your YouTube walkthrough link here and we will render it in this player section.
-                  </p>
-                  <p className="mt-3 text-xs text-slate-500">Example: https://www.youtube.com/watch?v=YOUR_VIDEO_ID</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-      */}
-
-      <section id="features" className="border-b border-white/8 bg-black py-16">
-        <div className="mx-auto w-full max-w-[1280px] px-4 md:px-6">
-          <div className="mx-auto max-w-3xl text-center">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Why teams use it</p>
-            <h2 className="mt-2 text-4xl font-semibold leading-tight md:text-5xl">A clearer value proposition for creative research and planning.</h2>
-            <p className="mt-3 text-base text-slate-400">
-              ViralAdLibrary helps marketers move from inspiration to action with searchable examples, AI guidance, and faster reporting.
-            </p>
-          </div>
-
-          <div className="mt-8 grid gap-4 md:grid-cols-[1.05fr_1fr_1.05fr]">
-            <article className="group relative min-h-[420px] overflow-hidden rounded-sm border border-white/10">
-              <img src={FEATURE_BLOCKS[0].image} alt={FEATURE_BLOCKS[0].title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/10" />
-              <div className="absolute bottom-0 p-5">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-300">Team Workflow</p>
-                <h3 className="mt-2 text-2xl font-semibold">{FEATURE_BLOCKS[0].title}</h3>
-                <p className="mt-2 text-sm text-slate-200">{FEATURE_BLOCKS[0].text}</p>
-              </div>
-            </article>
-
-            <div className="grid gap-4">
-              {[FEATURE_BLOCKS[1], FEATURE_BLOCKS[2]].map((item, index) => (
-                <article key={item.title} className="group relative min-h-[202px] overflow-hidden rounded-sm border border-white/10">
-                  <img src={item.image} alt={item.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/15" />
-                  <div className="absolute bottom-0 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-300">Benefit {index + 1}</p>
-                    <h3 className="mt-1 text-lg font-semibold">{item.title}</h3>
-                    <p className="mt-1 text-xs text-slate-200">{item.text}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-
-            <article className="group relative min-h-[420px] overflow-hidden rounded-sm border border-white/10">
-              <img src={FEATURE_BLOCKS[3].image} alt={FEATURE_BLOCKS[3].title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/10" />
-              <div className="absolute bottom-0 p-5">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-300">Execution</p>
-                <h3 className="mt-2 text-2xl font-semibold">{FEATURE_BLOCKS[3].title}</h3>
-                <p className="mt-2 text-sm text-slate-200">{FEATURE_BLOCKS[3].text}</p>
-              </div>
-            </article>
-          </div>
-
-        </div>
-      </section>
-
-      <section className="border-b border-white/8 bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.14),transparent_55%),#050505] py-20">
+      <section id="testimonials" className="border-b border-white/8 bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.14),transparent_55%),#050505] py-20">
         <div className="mx-auto w-full max-w-[1280px] px-4 md:px-6">
           <div className="mx-auto max-w-3xl text-center">
             <p className="inline-flex rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-slate-400">
@@ -608,6 +531,83 @@ function Landing() {
         </div>
       </section>
 
+      {/*
+      <section id="how-it-works" className="border-b border-white/8 bg-[#050505] py-14">
+        <div className="mx-auto w-full max-w-[1280px] px-4 md:px-6">
+          <div className="max-w-2xl">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">How it works</p>
+            <h2 className="mt-2 text-3xl font-semibold md:text-4xl">See the workflow in one quick walkthrough.</h2>
+            <p className="mt-3 text-base text-slate-400">
+              We will place your product walkthrough video here. For now, this section is on standby and ready for a YouTube link.
+            </p>
+          </div>
+
+          <div className="mt-7 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+            <div className="aspect-video w-full bg-[radial-gradient(circle_at_18%_24%,rgba(34,197,94,0.16),transparent_36%),linear-gradient(180deg,#0a0a0a_0%,#050505_100%)] p-6 md:p-8">
+              <div className="flex h-full w-full items-center justify-center rounded-xl border border-dashed border-emerald-300/30 bg-black/35 text-center">
+                <div className="max-w-xl px-4">
+                  <p className="text-sm font-semibold text-emerald-300">Video placeholder</p>
+                  <p className="mt-2 text-sm text-slate-300">
+                    Standby mode: add your YouTube walkthrough link here and we will render it in this player section.
+                  </p>
+                  <p className="mt-3 text-xs text-slate-500">Example: https://www.youtube.com/watch?v=YOUR_VIDEO_ID</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      */}
+
+      <section id="features" className="border-b border-white/8 bg-black py-16">
+        <div className="mx-auto w-full max-w-[1280px] px-4 md:px-6">
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Why teams use it</p>
+            <h2 className="mt-2 text-4xl font-semibold leading-tight md:text-5xl">A clearer value proposition for creative research and planning.</h2>
+            <p className="mt-3 text-base text-slate-400">
+              ViralAdLibrary helps marketers move from inspiration to action with searchable examples, AI guidance, and faster reporting.
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-[1.05fr_1fr_1.05fr]">
+            <article className="group relative min-h-[420px] overflow-hidden rounded-sm border border-white/10">
+              <img src={FEATURE_BLOCKS[0].image} alt={FEATURE_BLOCKS[0].title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/10" />
+              <div className="absolute bottom-0 p-5">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-300">Team Workflow</p>
+                <h3 className="mt-2 text-2xl font-semibold">{FEATURE_BLOCKS[0].title}</h3>
+                <p className="mt-2 text-sm text-slate-200">{FEATURE_BLOCKS[0].text}</p>
+              </div>
+            </article>
+
+            <div className="grid gap-4">
+              {[FEATURE_BLOCKS[1], FEATURE_BLOCKS[2]].map((item, index) => (
+                <article key={item.title} className="group relative min-h-[202px] overflow-hidden rounded-sm border border-white/10">
+                  <img src={item.image} alt={item.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/15" />
+                  <div className="absolute bottom-0 p-4">
+                    <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-300">Benefit {index + 1}</p>
+                    <h3 className="mt-1 text-lg font-semibold">{item.title}</h3>
+                    <p className="mt-1 text-xs text-slate-200">{item.text}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <article className="group relative min-h-[420px] overflow-hidden rounded-sm border border-white/10">
+              <img src={FEATURE_BLOCKS[3].image} alt={FEATURE_BLOCKS[3].title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/10" />
+              <div className="absolute bottom-0 p-5">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-300">Execution</p>
+                <h3 className="mt-2 text-2xl font-semibold">{FEATURE_BLOCKS[3].title}</h3>
+                <p className="mt-2 text-sm text-slate-200">{FEATURE_BLOCKS[3].text}</p>
+              </div>
+            </article>
+          </div>
+
+        </div>
+      </section>
+
       <section id="pricing" className="bg-[#030303] py-16">
         <div className="mx-auto w-full max-w-[1280px] px-4 md:px-6">
           <div className="mx-auto max-w-3xl text-center">
@@ -678,69 +678,7 @@ function Landing() {
         </div>
       </section>
 
-      <footer className="border-t border-white/8 bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.1),transparent_48%),#050505] py-14">
-        <div className="mx-auto w-full max-w-[1280px] px-4 md:px-6">
-          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-5">
-            <div className="lg:col-span-2">
-              <div className="flex items-center gap-3">
-                <img src={logo} alt="ViralAdLibrary logo" className="h-14 w-14 rounded-full object-cover" />
-                <h2 className="text-2xl font-semibold text-white">ViralAdLibrary</h2>
-              </div>
-              <p className="mt-3 max-w-md text-sm leading-6 text-slate-400">
-                Ad research, AI scoring, and exportable reporting for modern growth teams that need better creative decisions faster.
-              </p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                <a href="#pricing" className="rounded-full border border-emerald-300/30 bg-emerald-400/10 px-4 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-400/20">
-                  Start a plan
-                </a>
-                <a href="/blog" className="rounded-full border border-white/15 bg-white/[0.03] px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/[0.08]">
-                  Read the blog
-                </a>
-                <a href="mailto:support@viraladlbrary.site" className="rounded-full border border-white/15 bg-white/[0.03] px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-white/[0.08]">
-                  Contact support
-                </a>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Product</p>
-              <div className="mt-3 space-y-2 text-sm text-slate-300">
-                <a href="#library" className="block hover:text-white">Ad Library</a>
-                <a href="#features" className="block hover:text-white">Features</a>
-                <a href="#pricing" className="block hover:text-white">Pricing</a>
-                <a href="/blog" className="block hover:text-white">Blog</a>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Workflows</p>
-              <div className="mt-3 space-y-2 text-sm text-slate-300">
-                <a href="/tiktok/trending" className="block hover:text-white">TikTok Trending</a>
-                <a href="/website/cro-audit" className="block hover:text-white">Website CRO Audit</a>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Company</p>
-              <div className="mt-3 space-y-2 text-sm text-slate-300">
-                <a href="mailto:sales@viraladlbrary.site" className="block hover:text-white">sales@viraladlbrary.site</a>
-                <a href="mailto:support@viraladlbrary.site" className="block hover:text-white">support@viraladlbrary.site</a>
-                <a href="tel:+263771472707" className="block hover:text-white">Calls/WhatsApp: +263771472707</a>
-                <p className="pt-2 text-xs text-slate-500">Built for marketers, agencies, and performance teams.</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-10 flex flex-col gap-3 border-t border-white/10 pt-5 text-xs text-slate-500 md:flex-row md:items-center md:justify-between">
-            <p>© {new Date().getFullYear()} ViralAdLibrary. All rights reserved.</p>
-            <div className="flex flex-wrap gap-4">
-              <a href="#" className="hover:text-slate-300">Privacy</a>
-              <a href="#" className="hover:text-slate-300">Terms</a>
-              <a href="#" className="hover:text-slate-300">Cookies</a>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
 
       <button
         type="button"

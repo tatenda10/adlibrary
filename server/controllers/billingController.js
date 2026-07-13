@@ -411,6 +411,9 @@ async function createBillingCheckout(req, res) {
       return res.status(500).json({ error: 'Failed to create billing customer' });
     }
 
+    const customerEmail = pickPrimaryEmail(billingUser) || `${req.user.id}@clerk.local`;
+    const customerName = pickDisplayName(billingUser);
+
     const clientOrigin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
     const isOnboardingFlow = String(flow || '').toLowerCase() === 'onboarding';
     const checkoutBasePath = isOnboardingFlow ? '/onboarding/billing' : '/billing';
@@ -421,8 +424,11 @@ async function createBillingCheckout(req, res) {
       method: 'POST',
       body: JSON.stringify({
         product_cart: [{ product_id: productId, quantity: 1 }],
-        customer: { customer_id: customerId },
-        allowed_payment_method_types: ['credit', 'debit'],
+        customer: {
+          customer_id: customerId,
+          email: customerEmail,
+          name: customerName,
+        },
         return_url: returnUrl,
         cancel_url: cancelUrl,
         metadata: {

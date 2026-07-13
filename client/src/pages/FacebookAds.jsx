@@ -3,15 +3,17 @@ import { useAuth } from '@clerk/clerk-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useBilling } from '../components/billing/BillingContext.jsx';
 import {
+  API_URL,
   createCollection,
   intelligentSearchFacebookAds,
   isBillingOrQuotaError,
   searchFacebookAds,
+  searchFacebookPages,
 } from '../lib/api.js';
 import CubeLoader, { CubeLoaderOverlay } from '../components/CubeLoader.jsx';
 import FacebookHookGeneratorPanel from '../components/facebook/FacebookHookGeneratorPanel.jsx';
 import { useApiToast } from '../hooks/useApiToast.js';
-import { computeAdLongevityDays, sortAdsByLongevity } from '../lib/adLongevity.js';
+import { computeAdLongevityDays, sortAdsByImpressions, sortAdsByLongevity } from '../lib/adLongevity.js';
 import { buildIntelFromFacebookAd, saveBulkCreativeIntel } from '../lib/bulkCreativeIntel.js';
 
 const SPY_DEFAULT_SORT = 'longest_running';
@@ -86,6 +88,23 @@ const DEFAULT_COUNTRIES = [
   { value: 'US', label: 'United States' },
 ];
 const FREE_RESULT_LIMIT = 8;
+
+function countryMatchesQuery(item, query) {
+  const normalizedQuery = String(query || '').trim().toLowerCase();
+  if (!normalizedQuery) return true;
+
+  const label = String(item.label || '').toLowerCase();
+  const value = String(item.value || '').toLowerCase();
+  if (label.includes(normalizedQuery) || value.includes(normalizedQuery)) return true;
+
+  // Forgiving match for a leading typo/extra character (e.g. "xzimbabwe" -> "zimbabwe").
+  if (normalizedQuery.length > 2) {
+    const trimmed = normalizedQuery.slice(1);
+    if (label.includes(trimmed) || value.includes(trimmed)) return true;
+  }
+
+  return false;
+}
 
 function humanizeFacebookSlug(slug) {
   const raw = String(slug || '').replace(/^@/, '').trim();
@@ -219,6 +238,46 @@ function adMatchesCompetitorFilter(item, comp) {
   return false;
 }
 
+function buildAdvertisersFromResults(results = []) {
+  const map = new Map();
+  for (const item of results) {
+    const pageId = String(item.page_id || '').trim();
+    const name = String(item.page_name || item.title || '').trim() || 'Unknown';
+    const key = pageId || name;
+    const prev = map.get(key);
+    if (prev) {
+      prev.count += 1;
+    } else {
+      map.set(key, {
+        name,
+        page_id: pageId,
+        page_url: item.page_url || '',
+        count: 1,
+        from_plan: false,
+      });
+    }
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count);
+}
+
+function shouldProxyFacebookMedia(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return false;
+  try {
+    const host = new URL(raw).hostname.toLowerCase();
+    return host.includes('fbcdn.net') || host.endsWith('.facebook.com') || host.endsWith('.fb.com');
+  } catch {
+    return false;
+  }
+}
+
+function buildFacebookMediaUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  if (!shouldProxyFacebookMedia(raw)) return raw;
+  return `${API_URL}/api/facebook/media-proxy?url=${encodeURIComponent(raw)}`;
+}
+
 function FacebookAds() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -251,6 +310,9 @@ function FacebookAds() {
   const [seedQuery, setSeedQuery] = useState('');
   const [selectedCompetitor, setSelectedCompetitor] = useState(null);
   const [competitors, setCompetitors] = useState([]);
+  const [pageSuggestions, setPageSuggestions] = useState([]);
+  const [pageSuggestionsLoading, setPageSuggestionsLoading] = useState(false);
+  const [selectedPageUrls, setSelectedPageUrls] = useState([]);
 
   const source = useMemo(() => {
     const match = FACEBOOK_SOURCES.find((item) => location.pathname.startsWith(item.route));
@@ -293,14 +355,8 @@ function FacebookAds() {
       allOption.label.toLowerCase().includes(query) ||
       allOption.value.toLowerCase().includes(query);
     const list = !query
-      ? countries.filter((item) => item.value !== COUNTRY_ALL).slice(0, 79)
-      : countries
-          .filter(
-            (item) =>
-              item.value !== COUNTRY_ALL &&
-              (item.label.toLowerCase().includes(query) || item.value.toLowerCase().includes(query))
-          )
-          .slice(0, 79);
+      ? countries.filter((item) => item.value !== COUNTRY_ALL)
+      : countries.filter((item) => item.value !== COUNTRY_ALL && countryMatchesQuery(item, query));
     return matchesAll ? [allOption, ...list] : list;
   }, [countries, countrySearch]);
   const filteredResults = useMemo(() => {
@@ -342,6 +398,8 @@ function FacebookAds() {
 
     if (sortBy === 'longest_running') {
       next = sortAdsByLongevity(next);
+    } else if (sortBy === 'best_impressions') {
+      next = sortAdsByImpressions(next);
     } else if (sortBy === 'newest') {
       next.sort((a, b) => new Date(b.ad_delivery_start_time || b.ad_creation_time || 0) - new Date(a.ad_delivery_start_time || a.ad_creation_time || 0));
     } else if (sortBy === 'advertiser') {
@@ -375,24 +433,16 @@ function FacebookAds() {
     if (!ok) setPlatformFilter('all');
   }, [results, platformFilter]);
 
-  const planAdvertiserChips = useMemo(
-    () =>
-      competitors.map((c) => ({
-        key: `${c.page_id || 'nopage'}-${c.name}`,
-        competitor: c,
-        matchCount: results.filter((item) => adMatchesCompetitorFilter(item, c)).length,
-      })),
-    [competitors, results]
-  );
+  const sidebarAdvertisers = useMemo(() => {
+    const base = competitors.length ? competitors : buildAdvertisersFromResults(results);
+    return base
+      .map((entry) => ({
+        ...entry,
+        count: results.filter((item) => adMatchesCompetitorFilter(item, entry)).length || entry.count || 0,
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [competitors, results]);
 
-  const advertiserOptions = useMemo(() => {
-    const fromFacets = (facets?.advertisers || [])
-      .map((item) => (typeof item === 'string' ? item : item?.name))
-      .filter(Boolean);
-    if (!competitors.length) return fromFacets;
-    const fromPlan = competitors.map((c) => c.name).filter(Boolean);
-    return [...new Set([...fromPlan, ...fromFacets])];
-  }, [facets, competitors]);
   const ctaOptions = useMemo(
     () => (facets?.ctas || []).map((item) => item.label).filter(Boolean),
     [facets]
@@ -457,6 +507,46 @@ function FacebookAds() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (!isAdSource || searchMode !== 'keyword') {
+      setPageSuggestions([]);
+      return undefined;
+    }
+
+    const query = keyword.trim();
+    if (query.length < 2 || /^https?:\/\//i.test(query)) {
+      setPageSuggestions([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        setPageSuggestionsLoading(true);
+        const token = await getToken();
+        if (!token || cancelled) return;
+        const searchCountries = country === COUNTRY_ALL ? ['US'] : [country];
+        const data = await searchFacebookPages(token, {
+          q: query,
+          countries: searchCountries,
+          limit: 8,
+        });
+        if (!cancelled) {
+          setPageSuggestions(Array.isArray(data?.pages) ? data.pages : []);
+        }
+      } catch {
+        if (!cancelled) setPageSuggestions([]);
+      } finally {
+        if (!cancelled) setPageSuggestionsLoading(false);
+      }
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [country, getToken, isAdSource, keyword, searchMode]);
+
   const handleSearch = async (event) => {
     event.preventDefault();
     if (!keyword.trim()) return;
@@ -500,6 +590,7 @@ function FacebookAds() {
             adActiveStatus,
             source: sourceKey,
             searchMode,
+            pageUrls: selectedPageUrls,
           });
 
       setSearchPlan(data?.plan || null);
@@ -532,8 +623,10 @@ function FacebookAds() {
       setSeedQuery(keyword.trim());
       setSelectedCompetitor(null);
 
-      if (isAdSource && normalizedCompetitors.length > 0) {
-        setCompetitors(normalizedCompetitors);
+      if (isAdSource && (normalizedCompetitors.length > 0 || rawResults.length > 0)) {
+        setCompetitors(
+          normalizedCompetitors.length > 0 ? normalizedCompetitors : buildAdvertisersFromResults(rawResults)
+        );
         if (!rawResults.length) {
           setSearchNotice(
             'No ads were returned for this search. Try another country, active status, or simpler keywords. Advertiser shortcuts below will filter results once a search returns creatives.'
@@ -686,7 +779,7 @@ function FacebookAds() {
                     placeholder="Search country..."
                     className={`${FB_TOOLBAR_CONTROL} w-full`}
                   />
-                  <div className="mt-2 max-h-64 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <div className="mt-2 max-h-80 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                     {countriesLoading ? (
                       <div className="flex justify-center py-3">
                         <CubeLoader size={56} />
@@ -784,12 +877,54 @@ function FacebookAds() {
               className="min-h-[9.5rem] w-full resize-y bg-transparent text-sm leading-relaxed text-white outline-none placeholder:text-white/40"
             />
           ) : (
-            <input
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
-              placeholder={activeSource.placeholder}
-              className="h-10 w-full bg-transparent text-sm text-white outline-none placeholder:text-white/40"
-            />
+            <div className="space-y-3">
+              <input
+                value={keyword}
+                onChange={(event) => setKeyword(event.target.value)}
+                placeholder={activeSource.placeholder}
+                className="h-10 w-full bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+              />
+
+              {pageSuggestionsLoading ? (
+                <p className="text-xs text-white/50">Looking up official Facebook pages…</p>
+              ) : null}
+
+              {pageSuggestions.length ? (
+                <div className="space-y-2">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Official pages</p>
+                  <div className="flex flex-wrap gap-2">
+                    {pageSuggestions.map((page) => {
+                      const selected = selectedPageUrls.includes(page.url);
+                      return (
+                        <button
+                          key={`${page.url}-${page.id || page.name}`}
+                          type="button"
+                          onClick={() => {
+                            setSelectedPageUrls((prev) =>
+                              selected ? prev.filter((url) => url !== page.url) : [...prev, page.url]
+                            );
+                          }}
+                          className={`rounded-sm border px-2.5 py-1.5 text-left text-xs ${
+                            selected
+                              ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-100'
+                              : 'border-white/10 bg-black/20 text-white/80 hover:bg-white/5'
+                          }`}
+                        >
+                          <span className="font-semibold">{page.name}</span>
+                          <span className="mt-0.5 block text-[10px] text-white/45">{page.url}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              {selectedPageUrls.length ? (
+                <p className="text-xs text-emerald-200">
+                  Searching {selectedPageUrls.length} selected page{selectedPageUrls.length === 1 ? '' : 's'} with Apify.
+                </p>
+              ) : null}
+            </div>
           )}
         </div>
 
@@ -799,18 +934,7 @@ function FacebookAds() {
           </p>
         ) : null}
 
-        {!hasPaidPlan ? (
-          <div className="rounded-sm border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
-            Free plan: 5 Facebook searches per month, 8 results per search, 1 workspace folder, and 2 saved items.
-            <button
-              type="button"
-              onClick={() => navigate('/billing?checkoutPlan=starter')}
-              className="ml-2 font-semibold text-white underline underline-offset-2"
-            >
-              Upgrade for more
-            </button>
-          </div>
-        ) : isAdSource && !hasProAccess ? (
+        {!hasProAccess && isAdSource ? (
           <div className="rounded-sm border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
             Pro unlocks research brief, competitor search, and AI-assisted keyword expansion.
             <button
@@ -835,7 +959,7 @@ function FacebookAds() {
         </div>
       ) : null}
 
-      {searchPlan ? (
+      {searchPlan && !results.length ? (
         <div className="rounded-sm border [border-color:var(--app-border)] bg-[#0d1711] p-3">
           <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.18em] text-[#25d366]">
             <SearchSparkIcon />
@@ -917,7 +1041,7 @@ function FacebookAds() {
         </div>
       ) : null}
 
-      {researchSummary ? (
+      {researchSummary && !results.length ? (
         <div className="grid gap-3 md:grid-cols-4">
           <div className="rounded-sm app-card p-3">
             <p className="text-[11px] uppercase tracking-[0.12em] text-white/45">Ads surfaced</p>
@@ -945,233 +1069,216 @@ function FacebookAds() {
         </div>
       ) : null}
 
-      {isAdSource && competitors.length > 0 && results.length > 0 ? (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border [border-color:var(--app-border)] app-card px-4 py-3">
-            <div className="min-w-0">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-white/45">Advertisers in this result set</p>
-              <p className="mt-1 text-sm text-white/85">
-                Search: <span className="font-semibold text-white">&ldquo;{seedQuery}&rdquo;</span>
-                <span className="text-white/55"> — tap a brand to narrow the grid (no new search).</span>
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-2">
+      {isAdSource && results.length > 0 ? (
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+          <aside className="w-full shrink-0 lg:sticky lg:top-0 lg:w-1/3 lg:max-w-sm lg:self-start">
+            <div className="flex max-h-[calc(100dvh-6rem)] flex-col rounded-sm border [border-color:var(--app-border)] app-card p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-white/45">Advertisers</p>
+                  {seedQuery ? (
+                    <p className="mt-1 line-clamp-2 text-xs text-white/60">
+                      &ldquo;{seedQuery}&rdquo;
+                    </p>
+                  ) : null}
+                </div>
+                <span className="shrink-0 rounded-sm border border-white/10 px-2 py-1 text-[11px] text-white/60">
+                  {sidebarAdvertisers.length}
+                </span>
+              </div>
+
               <button
                 type="button"
                 disabled={isLoading}
                 onClick={handleClearAdvertiserFocus}
-                className={`rounded-sm border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${
+                className={`mt-4 w-full rounded-sm border px-3 py-2 text-left text-xs font-semibold transition disabled:opacity-50 ${
                   !selectedCompetitor
-                    ? 'border-[#25d366] bg-[#25d366]/20 text-white'
-                    : 'border-white/15 text-white/80 hover:bg-white/10'
+                    ? 'border-[#25d366] bg-[#25d366]/15 text-white'
+                    : 'border-white/10 text-white/80 hover:bg-white/5'
                 }`}
               >
                 All advertisers
               </button>
-              <span className="rounded-sm border border-white/10 px-2 py-1 text-xs text-white/60">
-                {competitors.length} leads
-              </span>
+
+              <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                {sidebarAdvertisers.map((c) => {
+                  const isSelected =
+                    selectedCompetitor &&
+                    selectedCompetitor.name === c.name &&
+                    (selectedCompetitor.page_id || '') === (c.page_id || '');
+                  return (
+                    <button
+                      key={`${c.page_id || 'nopage'}-${c.name}`}
+                      type="button"
+                      onClick={() => handleCompetitorSelect(c)}
+                      className={`flex w-full items-start gap-3 rounded-sm border px-3 py-3 text-left transition hover:bg-white/[0.03] ${
+                        isSelected
+                          ? 'border-[#25d366] bg-[#25d366]/10'
+                          : 'border-white/10 hover:border-white/20'
+                      }`}
+                    >
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1877f2]/25 text-xs font-bold text-[#8ab4ff]">
+                        {String(c.name).slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="line-clamp-2 text-sm font-semibold text-white">{c.name}</span>
+                        <span className="mt-1 block text-[11px] text-white/50">
+                          {c.count} ad{c.count === 1 ? '' : 's'}
+                          {c.from_plan ? ' · from plan' : ''}
+                        </span>
+                        {c.page_id ? (
+                          <span className="mt-1 block font-mono text-[10px] text-white/35">Page {c.page_id}</span>
+                        ) : null}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {competitors.map((c) => {
-              const isCardSelected =
-                selectedCompetitor &&
-                selectedCompetitor.name === c.name &&
-                (selectedCompetitor.page_id || '') === (c.page_id || '');
-              return (
-              <button
-                key={`${c.page_id || 'nopage'}-${c.name}`}
-                type="button"
-                onClick={() => handleCompetitorSelect(c)}
-                className={`flex flex-col items-start rounded-sm border bg-white/[0.02] px-4 py-4 text-left transition hover:bg-white/[0.04] disabled:opacity-50 ${
-                  isCardSelected ? 'border-[#25d366] shadow-[0_0_0_1px_rgba(37,211,102,0.35)]' : 'border-white/10 hover:border-[#25d366]'
-                }`}
+          </aside>
+
+          <div className="min-w-0 flex-1 space-y-3">
+            {selectedCompetitor ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-[#25d366]/25 bg-[#25d366]/10 px-3 py-2 text-sm text-white/85">
+                <p>
+                  Ads for <span className="font-semibold text-white">{selectedCompetitor.name}</span>
+                </p>
+                <button
+                  type="button"
+                  onClick={handleClearAdvertiserFocus}
+                  className="shrink-0 rounded-sm border border-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10"
+                >
+                  Clear
+                </button>
+              </div>
+            ) : null}
+
+            {searchNotice ? (
+              <div className="rounded-sm border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                {searchNotice}
+              </div>
+            ) : null}
+
+            {sortBy === 'longest_running' ? (
+              <div className="rounded-sm border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-100">
+                Ranked by run-time — longevity is the closest signal Meta gives you for a proven winner.
+              </div>
+            ) : null}
+
+            {sortBy === 'best_impressions' ? (
+              <div className="rounded-sm border border-sky-400/25 bg-sky-400/10 px-3 py-2 text-sm text-sky-100">
+                Ranked by impressions when Meta exposes them. Many ads hide exact reach — we use index buckets when available.
+              </div>
+            ) : null}
+
+            <div className="flex flex-wrap items-center gap-2 rounded-sm border [border-color:var(--app-border)] app-card p-3">
+              {hasPaidPlan ? (
+                <button
+                  type="button"
+                  onClick={handleSaveCollection}
+                  className="rounded-sm bg-[#7c3aed] px-4 py-2 text-sm font-semibold text-white"
+                >
+                  Save Results
+                </button>
+              ) : null}
+              <select
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value)}
+                className="rounded-sm app-input px-3 py-2 text-sm"
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1877f2]/25 text-sm font-bold text-[#8ab4ff]">
-                  {String(c.name).slice(0, 1).toUpperCase()}
-                </span>
-                <span className="mt-3 line-clamp-2 text-sm font-semibold text-white">{c.name}</span>
-                {c.from_plan ? (
-                  <span className="mt-1 text-xs text-emerald-200/85">From intelligent search plan</span>
-                ) : (
-                  <span className="mt-1 text-xs text-white/50">
-                    ~{c.count} ad{c.count === 1 ? '' : 's'} in discovery set
-                  </span>
-                )}
-                {c.page_id ? (
-                  <span className="mt-2 font-mono text-[10px] text-white/35">Page {c.page_id}</span>
+                <option value="longest_running">Longest running</option>
+                <option value="best_impressions">Best impressions</option>
+                <option value="best_match">Best match</option>
+                <option value="newest">Newest first</option>
+                <option value="video_first">Video first</option>
+                <option value="advertiser">Advertiser A-Z</option>
+              </select>
+              <select
+                value={resultFilter}
+                onChange={(event) => setResultFilter(event.target.value)}
+                className="rounded-sm app-input px-3 py-2 text-sm"
+              >
+                <option value="all">All formats</option>
+                <option value="video">Video only</option>
+                <option value="image">Static only</option>
+                <option value="facebook">Facebook only</option>
+                <option value="instagram">Instagram only</option>
+              </select>
+              <select
+                value={ctaFilter}
+                onChange={(event) => setCtaFilter(event.target.value)}
+                className="rounded-sm app-input px-3 py-2 text-sm"
+              >
+                <option value="all">All CTAs</option>
+                {ctaOptions.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+              <select
+                value={platformFilter}
+                onChange={(event) => setPlatformFilter(event.target.value)}
+                className="rounded-sm app-input px-3 py-2 text-sm"
+              >
+                <option value="all">All platforms</option>
+                {platformOptions.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+              <p className="text-xs text-white/60">
+                {filteredResults.length} shown
+                {filteredResults.length < results.length ? (
+                  <span className="text-white/40"> / {results.length}</span>
                 ) : null}
-              </button>
-            );
-            })}
+              </p>
+              {saveStatus ? <p className="text-xs text-white/70">{saveStatus}</p> : null}
+            </div>
+
+            {filteredResults.length === 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                <p>
+                  Filters are hiding all {results.length} result{results.length === 1 ? '' : 's'}.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResultFilter('all');
+                    setAdvertiserFilter('all');
+                    setCtaFilter('all');
+                    setPlatformFilter('all');
+                    setSortBy(isAdSource ? SPY_DEFAULT_SORT : 'best_match');
+                    setSelectedCompetitor(null);
+                  }}
+                  className="shrink-0 rounded-sm bg-[#25d366] px-3 py-2 text-xs font-semibold text-black"
+                >
+                  Reset filters
+                </button>
+              </div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {filteredResults.map((item) => (
+                  <FacebookResultCard key={item.id} item={item} navigate={navigate} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
-      ) : null}
-
-      {results.length ? (
+      ) : results.length ? (
         <div className="space-y-3">
-          {isAdSource && seedQuery && selectedCompetitor ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-[#25d366]/25 bg-[#25d366]/10 px-3 py-2 text-sm text-white/85">
-              <p>
-                Showing ads for <span className="font-semibold text-white">{selectedCompetitor.name}</span>
-                <span className="text-white/50"> · searched from </span>
-                <span className="text-white/70">&ldquo;{seedQuery}&rdquo;</span>
-              </p>
-              <button
-                type="button"
-                onClick={handleClearAdvertiserFocus}
-                className="shrink-0 rounded-sm border border-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10"
-              >
-                Show all advertisers
-              </button>
-            </div>
-          ) : null}
-          {isAdSource && sortBy === 'longest_running' ? (
-            <div className="rounded-sm border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-100">
-              Spy mode: ads ranked by run-time — longevity is the closest signal Meta gives you for a proven winner.
-            </div>
-          ) : null}
           <div className="flex flex-wrap items-center gap-2">
-            {hasPaidPlan ? (
-              <button
-                type="button"
-                onClick={handleSaveCollection}
-                className="rounded-sm bg-[#7c3aed] px-4 py-2 text-sm font-semibold text-white"
-              >
-                Save Results
-              </button>
-            ) : null}
-            <select
-              value={resultFilter}
-              onChange={(event) => setResultFilter(event.target.value)}
-              className="rounded-sm app-input px-3 py-2 text-sm"
-            >
-              <option value="all">All ads</option>
-              <option value="video">Video ads</option>
-              <option value="image">Static ads</option>
-              <option value="facebook">Facebook only</option>
-              <option value="instagram">Instagram only</option>
-            </select>
-            <select
-              value={advertiserFilter}
-              onChange={(event) => {
-                setAdvertiserFilter(event.target.value);
-                setSelectedCompetitor(null);
-              }}
-              className="rounded-sm app-input px-3 py-2 text-sm"
-            >
-              <option value="all">All advertisers</option>
-              {advertiserOptions.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-            <select
-              value={ctaFilter}
-              onChange={(event) => setCtaFilter(event.target.value)}
-              className="rounded-sm app-input px-3 py-2 text-sm"
-            >
-              <option value="all">All CTAs</option>
-              {ctaOptions.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-            <select
-              value={platformFilter}
-              onChange={(event) => setPlatformFilter(event.target.value)}
-              className="rounded-sm app-input px-3 py-2 text-sm"
-            >
-              <option value="all">All platforms</option>
-              {platformOptions.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
             <select
               value={sortBy}
               onChange={(event) => setSortBy(event.target.value)}
               className="rounded-sm app-input px-3 py-2 text-sm"
             >
-              <option value="longest_running">Longest running (spy)</option>
               <option value="best_match">Best match</option>
               <option value="newest">Newest first</option>
-              <option value="video_first">Video first</option>
-              <option value="advertiser">Advertiser A-Z</option>
             </select>
-            <p className="text-xs text-white/60">
-              {filteredResults.length} shown
-              {results.length > 0 && filteredResults.length < results.length ? (
-                <span className="text-white/40"> ({results.length} total)</span>
-              ) : null}
-            </p>
-            {saveStatus ? <p className="text-xs text-white/70">{saveStatus}</p> : null}
           </div>
-
-          {competitors.length > 0 || facets?.advertisers?.length ? (
-            <div className="rounded-sm app-card p-3">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-white/45">
-                {competitors.length > 0
-                  ? 'Competitors from your search (tap to filter)'
-                  : 'Top advertisers in this research set'}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {competitors.length > 0
-                  ? planAdvertiserChips.map(({ key, competitor, matchCount }) => (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => {
-                          setSelectedCompetitor(competitor);
-                          setAdvertiserFilter('all');
-                        }}
-                        className="rounded-sm border border-white/10 px-2 py-1 text-xs text-white/72 transition hover:border-[#25d366] hover:text-white"
-                      >
-                        {competitor.name}
-                        {matchCount > 0 ? ` (${matchCount})` : ' (0 in this set)'}
-                      </button>
-                    ))
-                  : (facets?.advertisers || []).slice(0, 8).map((item) => (
-                      <button
-                        key={`${item.page_id || ''}-${item.name}`}
-                        type="button"
-                        onClick={() => {
-                          setSelectedCompetitor({
-                            name: item.name,
-                            page_id: String(item.page_id || ''),
-                            page_url: '',
-                            from_plan: false,
-                          });
-                          setAdvertiserFilter('all');
-                        }}
-                        className="rounded-sm border border-white/10 px-2 py-1 text-xs text-white/72 transition hover:border-[#25d366] hover:text-white"
-                      >
-                        {item.name} ({item.count})
-                      </button>
-                    ))}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {results.length > 0 && filteredResults.length === 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-          <p>
-            Filters are hiding all {results.length} result{results.length === 1 ? '' : 's'}. Clear filters or widen format/platform choices.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setResultFilter('all');
-              setAdvertiserFilter('all');
-              setCtaFilter('all');
-              setPlatformFilter('all');
-              setSortBy(isAdSource ? SPY_DEFAULT_SORT : 'best_match');
-              setSelectedCompetitor(null);
-            }}
-            className="shrink-0 rounded-sm bg-[#25d366] px-3 py-2 text-xs font-semibold text-black"
-          >
-            Reset filters
-          </button>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {filteredResults.map((item) => (
+              <FacebookResultCard key={item.id} item={item} navigate={navigate} />
+            ))}
+          </div>
         </div>
       ) : null}
 
@@ -1185,11 +1292,6 @@ function FacebookAds() {
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {filteredResults.map((item) => (
-          <FacebookResultCard key={item.id} item={item} navigate={navigate} />
-        ))}
-      </div>
         </>
       )}
         </>
@@ -1224,7 +1326,7 @@ function pickHttpsMediaUrl(...values) {
   return '';
 }
 
-/** Poster + video from API fields or Curious Coder `raw.snapshot` (Apify). */
+/** Poster + video from API fields or Apify `raw.snapshot`. */
 function resolveFacebookAdCreativeMedia(item) {
   const raw = item?.raw && typeof item.raw === 'object' ? item.raw : {};
   const snap = raw.snapshot && typeof raw.snapshot === 'object' ? raw.snapshot : {};
@@ -1239,21 +1341,41 @@ function resolveFacebookAdCreativeMedia(item) {
 
   const posterUrl = pickHttpsMediaUrl(
     item?.image_url,
+    v0.videoPreviewImageUrl,
     v0.video_preview_image_url,
+    snap.pageProfilePictureUrl,
     snap.page_profile_picture_url,
     assetImage,
     snapImageUrl
   );
 
-  const videoUrl = pickHttpsMediaUrl(item?.video_url, v0.video_hd_url, v0.video_sd_url, assetVideo);
+  const videoUrl = pickHttpsMediaUrl(
+    item?.video_url,
+    v0.videoHdUrl,
+    v0.video_hd_url,
+    v0.videoSdUrl,
+    v0.video_sd_url,
+    assetVideo
+  );
 
-  const snapshotUrl = pickHttpsMediaUrl(item?.ad_snapshot_url, raw.ad_library_url);
+  const archiveId = String(raw.adArchiveId || raw.adArchiveID || raw.ad_archive_id || item?.id || '').trim();
+  const snapshotUrl = pickHttpsMediaUrl(
+    item?.ad_snapshot_url,
+    raw.ad_library_url,
+    raw.adLibraryUrl,
+    archiveId && /^\d+$/.test(archiveId) ? `https://www.facebook.com/ads/library/?id=${archiveId}` : ''
+  );
 
   const isVideo =
     Boolean(videoUrl) ||
-    String(snap.display_format || item?.display_format || '').toUpperCase() === 'VIDEO';
+    String(snap.displayFormat || snap.display_format || item?.display_format || '').toUpperCase() === 'VIDEO';
 
-  return { posterUrl, videoUrl, snapshotUrl, isVideo };
+  return {
+    posterUrl: buildFacebookMediaUrl(posterUrl),
+    videoUrl: buildFacebookMediaUrl(videoUrl),
+    snapshotUrl,
+    isVideo,
+  };
 }
 
 function FacebookAdResultCard({ item, navigate }) {
@@ -1276,7 +1398,7 @@ function FacebookAdResultCard({ item, navigate }) {
 
   return (
     <article className="rounded-sm app-card p-4">
-      <div className="relative h-48 w-full overflow-hidden rounded-sm bg-black/40">
+      <div className="relative min-h-[18rem] w-full overflow-hidden rounded-sm bg-black/40 md:min-h-[22rem]">
         {showVideoPlayer ? (
           <video
             key={media.videoUrl}
@@ -1287,7 +1409,6 @@ function FacebookAdResultCard({ item, navigate }) {
             muted
             playsInline
             preload="metadata"
-            referrerPolicy="no-referrer"
             onError={() => {
               setVideoFailed(true);
               setPlayVideo(false);
@@ -1307,8 +1428,6 @@ function FacebookAdResultCard({ item, navigate }) {
               src={media.posterUrl}
               alt={item.page_name || item.title || 'Ad creative'}
               className="h-full w-full object-cover"
-              referrerPolicy="no-referrer"
-              crossOrigin="anonymous"
               loading="lazy"
               onError={() => setPosterFailed(true)}
             />
@@ -1346,14 +1465,19 @@ function FacebookAdResultCard({ item, navigate }) {
       <div className="mt-2 flex flex-wrap gap-2">
         {(item.publisher_platforms || []).length ? item.publisher_platforms.map((platform) => (
           <span key={platform} className="rounded-sm border border-white/10 px-2 py-1 text-[11px] text-white/65">
-            {platform}
+            {platform.replace(/_/g, ' ')}
           </span>
         )) : <span className="text-xs app-muted">Platforms unavailable</span>}
-        {media.videoUrl || media.isVideo ? (
+        {media.isVideo ? (
           <span className="rounded-sm bg-emerald-400/15 px-2 py-1 text-[11px] text-emerald-300">Video</span>
         ) : null}
-        {media.posterUrl && !media.videoUrl ? (
+        {!media.isVideo && media.posterUrl ? (
           <span className="rounded-sm bg-sky-400/15 px-2 py-1 text-[11px] text-sky-300">Static</span>
+        ) : null}
+        {item.impressions_text || (typeof item.impressions === 'string' && item.impressions) ? (
+          <span className="rounded-sm bg-violet-400/15 px-2 py-1 text-[11px] text-violet-200">
+            {item.impressions_text || item.impressions}
+          </span>
         ) : null}
         {longevityDays > 0 ? (
           <span className="rounded-sm bg-amber-400/15 px-2 py-1 text-[11px] text-amber-200">

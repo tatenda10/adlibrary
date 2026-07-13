@@ -1,5 +1,11 @@
 const pool = require('../db/connection');
 const { normalizeWebsiteUrl, runWebsiteCrawl, crawlWebsiteForAudit } = require('../utils/websiteAudit');
+const {
+  scrapeWebsiteText,
+  extractBrandFieldsFromWebsite,
+  generateBrandVoiceDraft,
+  defaultChannelsForIndustry,
+} = require('../utils/onboardingWebsiteExtract');
 
 function extractJson(text) {
   const match = String(text || '').match(/\{[\s\S]*\}/);
@@ -29,7 +35,7 @@ async function buildBrandProfileWithClaude(onboardingData, websiteContent) {
     throw new Error('CLAUDE_API_KEY is not configured');
   }
 
-  const model = process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514';
+  const model = process.env.CLAUDE_MODEL || 'claude-sonnet-4-6';
 
   const prompt = `You are building a compact but rich brand profile for performance creatives.
 Return STRICT JSON only with this exact shape:
@@ -143,6 +149,46 @@ async function refreshBrandProfileInBackground({ userId, onboarding }) {
   }
 }
 
+async function getBrandProfileRow(userId) {
+  const [rows] = await pool.query(
+    `SELECT id, user_id, brand_name, website_url, industry, brand_size, target_audience,
+            goals, channels, preferences, story, tone, value_props, content_pillars,
+            onboarding_step, onboarding_completed,
+            created_at, updated_at, last_scraped_at
+     FROM brand_profiles
+     WHERE user_id = ?`,
+    [userId]
+  );
+  return rows?.[0] || null;
+}
+
+function parsePreferences(value) {
+  if (value == null) return {};
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(String(value)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function buildPreferencesPayload(body = {}, existing = {}) {
+  const prefs = { ...existing };
+  const incoming = body.preferences && typeof body.preferences === 'object' ? body.preferences : {};
+
+  if (body.niche != null) prefs.niche = String(body.niche || '').trim();
+  if (incoming.niche != null) prefs.niche = String(incoming.niche || '').trim();
+  if (Array.isArray(body.countries)) prefs.countries = body.countries;
+  if (Array.isArray(incoming.countries)) prefs.countries = incoming.countries;
+  if (incoming.country != null) prefs.country = incoming.country;
+  if (incoming.scrapeCache != null) prefs.scrapeCache = incoming.scrapeCache;
+  if (body.scrapeCache != null) prefs.scrapeCache = body.scrapeCache;
+  if (incoming.extracted != null) prefs.extracted = incoming.extracted;
+  if (body.extracted != null) prefs.extracted = body.extracted;
+
+  return prefs;
+}
+
 async function upsertOnboardingProfile(req, res) {
   try {
     if (!req.user) {
@@ -162,6 +208,7 @@ async function upsertOnboardingProfile(req, res) {
       industry,
       brandSize,
       targetAudience,
+      idealCustomers,
       goals,
       channels,
       preferences,
@@ -169,60 +216,88 @@ async function upsertOnboardingProfile(req, res) {
       value_props: valueProps,
       content_pillars: contentPillars,
       tone,
+      onboardingStep,
+      onboardingCompleted,
+      niche,
+      countries,
     } = req.body;
 
-    if (!brandName && !websiteUrl) {
+    const existing = await getBrandProfileRow(req.user.id);
+    const existingPrefs = parsePreferences(existing?.preferences);
+    const mergedPrefs = buildPreferencesPayload(
+      { niche, countries, preferences: preferences || {}, scrapeCache: req.body.scrapeCache, extracted: req.body.extracted },
+      existingPrefs
+    );
+
+    const resolvedTargetAudience =
+      String(targetAudience || idealCustomers || existing?.target_audience || '').trim() || null;
+    const resolvedStep = Number.isFinite(Number(onboardingStep))
+      ? Math.min(4, Math.max(1, Number(onboardingStep)))
+      : Number(existing?.onboarding_step) || 1;
+    const resolvedCompleted =
+      onboardingCompleted === true || onboardingCompleted === 1 || onboardingCompleted === '1'
+        ? 1
+        : onboardingCompleted === false || onboardingCompleted === 0 || onboardingCompleted === '0'
+          ? 0
+          : Number(existing?.onboarding_completed) || 0;
+
+    if (!brandName && !websiteUrl && !existing && !onboardingStep) {
       return res.status(400).json({ error: 'brandName or websiteUrl is required' });
     }
 
     const [result] = await pool.query(
       `INSERT INTO brand_profiles (
         user_id, brand_name, website_url, industry, brand_size, target_audience,
-        goals, channels, preferences, story, tone, value_props, content_pillars
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        goals, channels, preferences, story, tone, value_props, content_pillars,
+        onboarding_step, onboarding_completed
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
-        brand_name = VALUES(brand_name),
-        website_url = VALUES(website_url),
-        industry = VALUES(industry),
-        brand_size = VALUES(brand_size),
-        target_audience = VALUES(target_audience),
-        goals = VALUES(goals),
-        channels = VALUES(channels),
-        preferences = VALUES(preferences),
+        brand_name = COALESCE(VALUES(brand_name), brand_name),
+        website_url = COALESCE(VALUES(website_url), website_url),
+        industry = COALESCE(VALUES(industry), industry),
+        brand_size = COALESCE(VALUES(brand_size), brand_size),
+        target_audience = COALESCE(VALUES(target_audience), target_audience),
+        goals = COALESCE(VALUES(goals), goals),
+        channels = COALESCE(VALUES(channels), channels),
+        preferences = COALESCE(VALUES(preferences), preferences),
         story = COALESCE(VALUES(story), story),
         tone = COALESCE(VALUES(tone), tone),
         value_props = COALESCE(VALUES(value_props), value_props),
         content_pillars = COALESCE(VALUES(content_pillars), content_pillars),
+        onboarding_step = COALESCE(VALUES(onboarding_step), onboarding_step),
+        onboarding_completed = COALESCE(VALUES(onboarding_completed), onboarding_completed),
         updated_at = CURRENT_TIMESTAMP`,
       [
         req.user.id,
-        brandName || null,
-        websiteUrl || null,
-        industry || null,
-        brandSize || null,
-        targetAudience || null,
-        goals ? JSON.stringify(goals) : null,
-        channels ? JSON.stringify(channels) : null,
-        preferences ? JSON.stringify(preferences) : null,
-        story || null,
-        tone ? JSON.stringify(tone) : null,
-        valueProps ? JSON.stringify(valueProps) : null,
-        contentPillars ? JSON.stringify(contentPillars) : null,
+        brandName || existing?.brand_name || null,
+        websiteUrl || existing?.website_url || null,
+        industry || existing?.industry || null,
+        brandSize || existing?.brand_size || null,
+        resolvedTargetAudience,
+        goals ? JSON.stringify(goals) : existing?.goals || null,
+        channels ? JSON.stringify(channels) : existing?.channels || null,
+        Object.keys(mergedPrefs).length ? JSON.stringify(mergedPrefs) : existing?.preferences || null,
+        story !== undefined ? story || null : existing?.story || null,
+        tone ? JSON.stringify(tone) : existing?.tone || null,
+        valueProps ? JSON.stringify(valueProps) : existing?.value_props || null,
+        contentPillars ? JSON.stringify(contentPillars) : existing?.content_pillars || null,
+        resolvedStep,
+        resolvedCompleted,
       ]
     );
 
     const onboarding = {
-      brandName,
-      websiteUrl,
-      industry,
+      brandName: brandName || existing?.brand_name,
+      websiteUrl: websiteUrl || existing?.website_url,
+      industry: industry || existing?.industry,
       brandSize,
-      targetAudience,
+      targetAudience: resolvedTargetAudience,
       goals,
       channels,
-      preferences,
+      preferences: mergedPrefs,
     };
 
-    if (!story && !valueProps && !contentPillars) {
+    if (!story && !valueProps && !contentPillars && resolvedCompleted) {
       refreshBrandProfileInBackground({ userId: req.user.id, onboarding }).catch((error) => {
         console.error('Failed to start background brand profile refresh:', error);
       });
@@ -231,6 +306,7 @@ async function upsertOnboardingProfile(req, res) {
     const [rows] = await pool.query(
       `SELECT id, user_id, brand_name, website_url, industry, brand_size, target_audience,
               goals, channels, preferences, story, tone, value_props, content_pillars,
+              onboarding_step, onboarding_completed,
               created_at, updated_at, last_scraped_at
        FROM brand_profiles
        WHERE user_id = ?`,
@@ -262,6 +338,7 @@ async function getBrandProfile(req, res) {
     const [rows] = await pool.query(
       `SELECT id, user_id, brand_name, website_url, industry, brand_size, target_audience,
               goals, channels, preferences, story, tone, value_props, content_pillars,
+              onboarding_step, onboarding_completed,
               created_at, updated_at, last_scraped_at
        FROM brand_profiles
        WHERE user_id = ?`,
@@ -319,7 +396,7 @@ async function getOnboardingStatus(req, res) {
     await ensureUser(req.user);
 
     const [rows] = await pool.query(
-      `SELECT brand_name, website_url, story
+      `SELECT brand_name, website_url, story, onboarding_step, onboarding_completed, preferences
        FROM brand_profiles
        WHERE user_id = ?`,
       [req.user.id]
@@ -332,21 +409,27 @@ async function getOnboardingStatus(req, res) {
       });
       return res.json({
         completed: false,
+        onboardingStep: 1,
         hasProfile: false,
         hasInsights: false,
       });
     }
 
     const row = rows[0];
+    const prefs = parsePreferences(row.preferences);
     const hasBasicProfile =
+      Boolean(Number(row.onboarding_completed)) ||
       (row.brand_name && String(row.brand_name).trim()) ||
       (row.website_url && String(row.website_url).trim());
     const hasInsights = row.story && String(row.story).trim();
 
     const status = {
-      completed: Boolean(hasBasicProfile),
+      completed: Boolean(Number(row.onboarding_completed)),
+      onboardingStep: Number(row.onboarding_step) || 1,
       hasProfile: Boolean(hasBasicProfile),
       hasInsights: Boolean(hasInsights),
+      niche: prefs.niche || '',
+      countries: Array.isArray(prefs.countries) ? prefs.countries : [],
     };
 
     console.log('[onboarding] status result', {
@@ -359,6 +442,103 @@ async function getOnboardingStatus(req, res) {
     console.error('getOnboardingStatus error:', error);
     return res.status(500).json({ error: 'Failed to fetch onboarding status' });
   }
+}
+
+async function extractWebsiteBrand(req, res) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    await ensureUser(req.user);
+
+    const { websiteUrl } = req.body || {};
+    if (!websiteUrl || !String(websiteUrl).trim()) {
+      return res.status(400).json({ error: 'websiteUrl is required' });
+    }
+
+    let normalizedUrl;
+    try {
+      normalizedUrl = normalizeWebsiteUrl(websiteUrl);
+    } catch (e) {
+      return res.status(400).json({ error: e.message || 'Invalid website URL' });
+    }
+
+    const scrape = await scrapeWebsiteText(normalizedUrl);
+    const extracted = await extractBrandFieldsFromWebsite(scrape.scrapedText);
+    const suggestedChannels = defaultChannelsForIndustry(extracted.industry);
+
+    const existing = await getBrandProfileRow(req.user.id);
+    const mergedPrefs = buildPreferencesPayload(
+      {
+        scrapeCache: {
+          websiteUrl: scrape.websiteUrl,
+          scrapedText: scrape.scrapedText,
+          aboutUrl: scrape.aboutUrl,
+        },
+        extracted,
+      },
+      parsePreferences(existing?.preferences)
+    );
+
+    await pool.query(
+      `INSERT INTO brand_profiles (user_id, website_url, preferences, onboarding_step)
+       VALUES (?, ?, ?, 1)
+       ON DUPLICATE KEY UPDATE
+         website_url = VALUES(website_url),
+         preferences = VALUES(preferences),
+         updated_at = CURRENT_TIMESTAMP`,
+      [req.user.id, scrape.websiteUrl, JSON.stringify(mergedPrefs)]
+    );
+
+    return res.json({
+      websiteUrl: scrape.websiteUrl,
+      extracted,
+      suggestedChannels,
+      scrapeCache: mergedPrefs.scrapeCache,
+    });
+  } catch (error) {
+    console.error('extractWebsiteBrand error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to extract brand from website' });
+  }
+}
+
+async function generateVoiceDraft(req, res) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    await ensureUser(req.user);
+
+    const { websiteUrl, scrapeCache } = req.body || {};
+    const existing = await getBrandProfileRow(req.user.id);
+    const prefs = parsePreferences(existing?.preferences);
+    const cached = scrapeCache || prefs.scrapeCache || null;
+
+    let scrapedText = String(cached?.scrapedText || '').trim();
+    const url = websiteUrl || cached?.websiteUrl || existing?.website_url || '';
+
+    if (!scrapedText && url) {
+      const scrape = await scrapeWebsiteText(url);
+      scrapedText = scrape.scrapedText;
+    }
+
+    if (!scrapedText) {
+      return res.status(400).json({ error: 'No website content available to generate a draft' });
+    }
+
+    const draft = await generateBrandVoiceDraft(scrapedText);
+    return res.json(draft);
+  } catch (error) {
+    console.error('generateVoiceDraft error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to generate brand voice draft' });
+  }
+}
+
+async function patchOnboardingProfile(req, res) {
+  req.body = { ...(req.body || {}) };
+  return upsertOnboardingProfile(req, res);
 }
 
 async function previewBrandProfile(req, res) {
@@ -562,8 +742,11 @@ async function previewLandingWebsite(req, res) {
 
 module.exports = {
   upsertOnboardingProfile,
+  patchOnboardingProfile,
   getBrandProfile,
   getOnboardingStatus,
+  extractWebsiteBrand,
+  generateVoiceDraft,
   previewBrandProfile,
   previewLandingWebsite,
 };

@@ -9,6 +9,18 @@ const TECHNICAL_PATTERNS = [
   /APIFY_TOKEN/i,
   /defaultdatasetid/i,
   /key-value-stores/i,
+  /content security policy/i,
+  /content-security-policy/i,
+  /permissions policy/i,
+  /permissions-policy/i,
+  /worker-src/i,
+  /script-src/i,
+  /airwallex/i,
+  /dodopayments/i,
+  /violates the following/i,
+  /report-only/i,
+  /bluetooth is not allowed/i,
+  /static-demo\./i,
 ];
 
 const TOAST_FALLBACKS = {
@@ -21,13 +33,15 @@ const TOAST_FALLBACKS = {
   server: 'Our servers are busy. Please try again in a few minutes.',
   unavailable: 'This data is temporarily unavailable. Please try again shortly.',
   validation: 'Please check your input and try again.',
+  payment: 'We could not open checkout. Please try again in a moment.',
   generic: 'Something went wrong. Please try again.',
 };
 
 export function isTechnicalErrorMessage(message) {
   const raw = String(message || '').trim();
   if (!raw) return false;
-  if (raw.length > 320 && /https?:\/\//i.test(raw)) return true;
+  if (raw.length > 180 && /https?:\/\//i.test(raw)) return true;
+  if (/something went wrong/i.test(raw) && /https?:\/\//i.test(raw)) return true;
   return TECHNICAL_PATTERNS.some((pattern) => pattern.test(raw));
 }
 
@@ -113,6 +127,14 @@ export function getToastErrorMessage(err, fallback = TOAST_FALLBACKS.generic) {
   }
 
   return getUserFacingError(err, mapped || fallback);
+}
+
+export function isGenericToastMessage(message) {
+  const raw = String(message || '').trim();
+  if (!raw) return true;
+  if (raw === TOAST_FALLBACKS.generic) return true;
+  if (/^something went wrong\b/i.test(raw)) return true;
+  return isTechnicalErrorMessage(raw);
 }
 
 export { TOAST_FALLBACKS };
