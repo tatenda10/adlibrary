@@ -1,38 +1,19 @@
-const FACE_KEYS = ['front', 'back', 'right', 'left', 'top', 'bottom'];
-
-function CubeFace({ faceKey }) {
-  return (
-    <div className={`cube__face cube__face--${faceKey}`} id={`cube__face--${faceKey}`}>
-      {Array.from({ length: 9 }, (_, index) => (
-        <span key={index} className="faceBox" />
-      ))}
-    </div>
-  );
-}
-
 function CubeLoader({
-  size = 100,
+  size = 40,
   label = '',
   className = '',
-  interactive = false,
 }) {
-  const cubeClass = ['cube', interactive ? 'cube--interactive' : ''].filter(Boolean).join(' ');
-
   return (
     <div
-      className={`cube-loader ${className}`.trim()}
-      style={{ '--cube-size': `${size}px` }}
+      className={`spiral-loader ${className}`.trim()}
+      style={{ '--spiral-size': `${size}px` }}
       role="status"
       aria-live="polite"
       aria-busy="true"
       aria-label={label || 'Loading'}
     >
-      <div className={cubeClass}>
-        {FACE_KEYS.map((faceKey) => (
-          <CubeFace key={faceKey} faceKey={faceKey} />
-        ))}
-      </div>
-      {label ? <p className="cube-loader__label">{label}</p> : null}
+      <span className="spiral-loader__ring" aria-hidden="true" />
+      {label ? <p className="spiral-loader__label">{label}</p> : null}
     </div>
   );
 }
@@ -42,11 +23,11 @@ export function CubeLoaderOverlay({
   className = '',
   minHeight,
   fullscreen = false,
-  size = 100,
+  size = 40,
 }) {
   const overlayClass = [
-    'cube-loader-overlay',
-    fullscreen ? 'cube-loader-overlay--fullscreen' : '',
+    'spiral-loader-overlay',
+    fullscreen ? 'spiral-loader-overlay--fullscreen' : '',
     className,
   ]
     .filter(Boolean)

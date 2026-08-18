@@ -379,8 +379,8 @@ function OnboardingTab({ loading, data }) {
         />
         <AdminMetricCard
           label="Completed"
-          value={String(data.funnel?.find((s) => s.key === 'onboarding_continue_to_workspace')?.unique_users || 0)}
-          detail="Reached workspace"
+          value={String(data.funnel?.find((s) => s.key === 'onboarding_completed')?.unique_users || 0)}
+          detail="Finished setup"
         />
       </div>
 
@@ -391,20 +391,52 @@ function OnboardingTab({ loading, data }) {
         steps={funnelSteps}
         summary={{
           entered: funnelSteps[0]?.active_users || 0,
-          completed: funnelSteps.find((s) => s.event === 'onboarding_continue_to_workspace')?.active_users || 0,
+          completed: funnelSteps.find((s) => s.event === 'onboarding_completed')?.active_users || 0,
           overall_conversion: (data.completion_rate || 0) / 100,
         }}
       />
 
+      {(data.question_answers || []).length ? (
+        <AdminCard>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Question answers</p>
+          <ul className="mt-4 space-y-2">
+            {data.question_answers.map((row) => (
+              <li key={row.key} className="flex justify-between text-sm">
+                <span className="text-white">{row.label}</span>
+                <span className="text-[#9ca3af]">
+                  {row.total} answers · {row.unique_users} users
+                </span>
+              </li>
+            ))}
+          </ul>
+        </AdminCard>
+      ) : null}
+
       {(data.step_breakdown || []).length ? (
         <AdminCard>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Step views</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Screen views</p>
           <ul className="mt-4 space-y-2">
             {data.step_breakdown.map((row) => (
               <li key={row.step_key} className="flex justify-between text-sm">
-                <span className="text-white">{row.step_key}</span>
+                <span className="text-white">{row.label || row.step_key}</span>
                 <span className="text-[#9ca3af]">
                   {row.views} views · {row.unique_users} users
+                </span>
+              </li>
+            ))}
+          </ul>
+        </AdminCard>
+      ) : null}
+
+      {(data.dropoffs || []).length ? (
+        <AdminCard>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-rose-300">Left on this question</p>
+          <ul className="mt-4 space-y-2">
+            {data.dropoffs.map((row) => (
+              <li key={row.step_key} className="flex justify-between text-sm">
+                <span className="text-white">{row.label || row.step_key}</span>
+                <span className="text-[#9ca3af]">
+                  {row.total} leaves · {row.unique_users} users
                 </span>
               </li>
             ))}

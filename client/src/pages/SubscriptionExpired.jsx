@@ -4,6 +4,8 @@ import { useClerk } from '@clerk/clerk-react';
 import { useBilling } from '../components/billing/BillingContext.jsx';
 import { CubeLoaderOverlay } from '../components/CubeLoader.jsx';
 import { PRICING_PLANS } from '../lib/pricingPlans.js';
+import { trackCheckoutStarted } from '../lib/metaPixelCheckout.js';
+import { trackMetaViewContent } from '../lib/metaPixel.js';
 import { useApiToast } from '../hooks/useApiToast.js';
 
 function planLabel(key) {
@@ -34,9 +36,17 @@ function SubscriptionExpired() {
     }
   }, [loading, navigate, subscription?.had_subscription_before, subscription?.is_active]);
 
+  useEffect(() => {
+    trackMetaViewContent({
+      content_name: 'subscription_expired',
+      content_category: 'pricing',
+    });
+  }, []);
+
   const startCheckout = async (planKey) => {
     try {
       setActionLoading(planKey);
+      trackCheckoutStarted(planKey, 'reactivation');
       await beginCheckout(planKey);
     } catch (err) {
       console.error(err);

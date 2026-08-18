@@ -50,6 +50,7 @@ import { RequirePaidAccess, RequireProAccess } from './components/billing/Billin
 import { CubeLoaderOverlay } from './components/CubeLoader.jsx';
 import { trackPageView } from './lib/firebaseAnalytics.js';
 import AnalyticsBridge from './components/AnalyticsBridge.jsx';
+import MetaPixelBridge from './components/MetaPixelBridge.jsx';
 
 function AppLoadingScreen() {
   return <CubeLoaderOverlay minHeight="100vh" className="min-h-screen bg-[#080808]" />;
@@ -179,6 +180,7 @@ function App() {
   return (
     <>
       <AnalyticsBridge />
+      <MetaPixelBridge />
       <Routes>
       <Route path="/" element={<PublicOnly />} />
       <Route path="/blog" element={<Blog />} />

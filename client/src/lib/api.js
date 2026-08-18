@@ -1,12 +1,12 @@
 import { getUserFacingError } from './userFacingError.js';
 
-//export const API_URL = (
-//    import.meta.env.VITE_API_URL ||
-//  import.meta.env.VITE_API_BASE_URL ||
-//  'http://localhost:5000'
-//).replace(/\/+$/, '');
+export const API_URL = (
+   import.meta.env.VITE_API_URL ||
+ import.meta.env.VITE_API_BASE_URL ||
+ 'http://localhost:5000'
+).replace(/\/+$/, '');
 
-export const API_URL = 'https://viraladlibrary.space';
+//export const API_URL = 'https://viraladlibrary.space';
 
 function isApifyArtifactUrl(value) {
   const raw = String(value || '').toLowerCase();

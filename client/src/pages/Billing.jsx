@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CubeLoaderOverlay } from '../components/CubeLoader.jsx';
 import { useBilling } from '../components/billing/BillingContext.jsx';
+import { trackCheckoutCompletedFromBilling, trackCheckoutStarted } from '../lib/metaPixelCheckout.js';
+import { trackMetaViewContent } from '../lib/metaPixel.js';
 import { showInfoToast } from '../lib/toast.js';
 
 function Billing() {
@@ -40,6 +42,13 @@ function Billing() {
         setCheckoutNotice(ok ? 'success' : 'failed');
         if (ok) {
           showInfoToast('Payment completed. Your subscription is active.');
+          trackCheckoutCompletedFromBilling(data?.subscription, {
+            planKey: checkoutPlan || data?.subscription?.plan_key || data?.subscription?.current_plan,
+            eventId:
+              searchParams.get('payment_id') ||
+              searchParams.get('subscription_id') ||
+              undefined,
+          });
         }
         const nextParams = new URLSearchParams(searchParams);
         nextParams.delete('checkout');
@@ -59,6 +68,15 @@ function Billing() {
       cancelled = true;
     };
   }, [checkoutState, refreshBilling, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (checkoutState === 'success') return;
+    trackMetaViewContent({
+      content_name: 'billing',
+      content_category: 'pricing',
+      content_ids: checkoutPlan ? [checkoutPlan] : undefined,
+    });
+  }, [checkoutPlan, checkoutState]);
 
   const planCards = useMemo(
     () => [
@@ -88,6 +106,7 @@ function Billing() {
       if (subscription?.is_active && subscription?.current_plan !== planKey) {
         await openPortal();
       } else {
+        trackCheckoutStarted(planKey, 'billing');
         await beginCheckout(planKey);
       }
     } catch (err) {

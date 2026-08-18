@@ -173,7 +173,7 @@ export function LocalFunnelChart({ funnel = [], completionRate = 0 }) {
 
   const summary = {
     entered: steps[0]?.active_users || 0,
-    completed: steps.find((s) => s.event === 'onboarding_continue_to_workspace')?.active_users || 0,
+    completed: steps.find((s) => s.event === 'onboarding_completed')?.active_users || 0,
     overall_conversion: (completionRate || 0) / 100,
   };
 

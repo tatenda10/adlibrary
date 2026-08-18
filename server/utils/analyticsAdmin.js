@@ -2,13 +2,49 @@ const pool = require('../db/connection');
 
 const ONBOARDING_MILESTONES = [
   { key: 'onboarding_started', label: 'Started onboarding' },
-  { key: 'onboarding_step_view', label: 'Viewed a step', propKey: 'step_key' },
-  { key: 'onboarding_website_analyzed', label: 'Website analyzed' },
-  { key: 'onboarding_website_skipped', label: 'Skipped website step' },
-  { key: 'onboarding_continue_to_workspace', label: 'Completed onboarding' },
+  { key: 'onboarding_q_website_viewed', label: 'Website URL' },
+  { key: 'onboarding_q_brand_name_answered', label: 'Brand name' },
+  { key: 'onboarding_q_industry_answered', label: 'Industry' },
+  { key: 'onboarding_q_niche_answered', label: 'Niche' },
+  { key: 'onboarding_q_countries_answered', label: 'Countries' },
+  { key: 'onboarding_q_channels_answered', label: 'Channels' },
+  { key: 'onboarding_q_story_answered', label: 'Brand story' },
+  { key: 'onboarding_q_ideal_customer_answered', label: 'Ideal customer' },
+  { key: 'onboarding_completed', label: 'Completed onboarding' },
+  { key: 'onboarding_unlock_viewed', label: 'Viewed unlock teaser' },
   { key: 'onboarding_billing_viewed', label: 'Viewed billing' },
   { key: 'onboarding_billing_checkout_started', label: 'Started checkout' },
 ];
+
+const QUESTION_ANSWER_EVENTS = [
+  { key: 'onboarding_q_website_answered', label: 'Website URL' },
+  { key: 'onboarding_q_website_skipped', label: 'Skipped website' },
+  { key: 'onboarding_q_brand_name_answered', label: 'Brand name' },
+  { key: 'onboarding_q_industry_answered', label: 'Industry' },
+  { key: 'onboarding_q_niche_answered', label: 'Niche' },
+  { key: 'onboarding_q_countries_answered', label: 'Countries' },
+  { key: 'onboarding_q_channels_answered', label: 'Channels' },
+  { key: 'onboarding_q_story_answered', label: 'Brand story' },
+  { key: 'onboarding_q_ideal_customer_answered', label: 'Ideal customer' },
+];
+
+const QUESTION_LABELS = {
+  website: 'Website URL',
+  brand: 'Brand details',
+  brand_name: 'Brand name',
+  industry: 'Industry',
+  niche: 'Niche',
+  markets: 'Markets & channels',
+  countries: 'Countries',
+  channels: 'Channels',
+  voice: 'Brand voice',
+  story: 'Brand story',
+  ideal_customer: 'Ideal customer',
+  step_1: 'Website URL',
+  step_2: 'Brand details',
+  step_3: 'Markets & channels',
+  step_4: 'Brand voice',
+};
 
 function safeDays(raw) {
   return Math.min(Math.max(Number(raw) || 7, 1), 90);
@@ -175,6 +211,16 @@ async function getOnboardingAnalytics({ days = 30 } = {}) {
     };
   });
 
+  const questionAnswers = QUESTION_ANSWER_EVENTS.map((step) => {
+    const row = countsByEvent.get(step.key) || {};
+    return {
+      key: step.key,
+      label: step.label,
+      total: Number(row.total || 0),
+      unique_users: Number(row.unique_users || 0),
+    };
+  });
+
   const [stepViews] = await pool.query(
     `SELECT props_json, user_id, session_id
      FROM product_events
@@ -198,22 +244,40 @@ async function getOnboardingAnalytics({ days = 30 } = {}) {
   const steps = [...stepBreakdown.values()]
     .map((entry) => ({
       step_key: entry.step_key,
+      label: QUESTION_LABELS[entry.step_key] || entry.step_key,
       views: entry.views,
       unique_users: entry.users.size,
       unique_sessions: entry.sessions.size,
     }))
     .sort((a, b) => b.views - a.views);
 
-  const [dropoffs] = await pool.query(
-    `SELECT props_json, COUNT(*) AS total
+  const [dropoffRows] = await pool.query(
+    `SELECT props_json, user_id
      FROM product_events
      WHERE event_name = 'onboarding_dropoff'
        AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
-     GROUP BY props_json
-     ORDER BY total DESC
-     LIMIT 20`,
+     LIMIT 2000`,
     [safeDaysVal]
   );
+
+  const dropoffBreakdown = new Map();
+  for (const row of dropoffRows || []) {
+    const props = parseJson(row.props_json) || {};
+    const stepKey = String(props.step_key || props.question_label || 'unknown');
+    const entry = dropoffBreakdown.get(stepKey) || { step_key: stepKey, total: 0, users: new Set() };
+    entry.total += 1;
+    if (row.user_id) entry.users.add(row.user_id);
+    dropoffBreakdown.set(stepKey, entry);
+  }
+
+  const dropoffs = [...dropoffBreakdown.values()]
+    .map((entry) => ({
+      step_key: entry.step_key,
+      label: QUESTION_LABELS[entry.step_key] || entry.step_key,
+      total: entry.total,
+      unique_users: entry.users.size,
+    }))
+    .sort((a, b) => b.total - a.total);
 
   const [recent] = await pool.query(
     `SELECT id, user_id, event_name, page_path, props_json, created_at
@@ -226,17 +290,15 @@ async function getOnboardingAnalytics({ days = 30 } = {}) {
   );
 
   const started = Number(countsByEvent.get('onboarding_started')?.unique_users || 0);
-  const completed = Number(countsByEvent.get('onboarding_continue_to_workspace')?.unique_users || 0);
+  const completed = Number(countsByEvent.get('onboarding_completed')?.unique_users || 0);
   const completionRate = started > 0 ? Math.round((completed / started) * 1000) / 10 : 0;
 
   return {
     days: safeDaysVal,
     funnel,
+    question_answers: questionAnswers,
     step_breakdown: steps,
-    dropoffs: (dropoffs || []).map((row) => ({
-      total: row.total,
-      props: parseJson(row.props_json),
-    })),
+    dropoffs,
     completion_rate: completionRate,
     recent: (recent || []).map(normalizeEventRow),
   };

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { setAnalyticsAuthTokenProvider } from '../lib/productAnalytics.js';
 import { trackEvent } from '../lib/firebaseAnalytics.js';
+import { trackMetaLead } from '../lib/metaPixel.js';
 
 export default function AnalyticsBridge() {
   const { getToken, isSignedIn, userId } = useAuth();
@@ -29,6 +30,10 @@ export default function AnalyticsBridge() {
     trackEvent('user_signed_in', {
       page_path: typeof window !== 'undefined' ? window.location.pathname : '',
       clerk_user_id: userId,
+    });
+    trackMetaLead({
+      content_name: 'clerk_sign_in',
+      page_path: typeof window !== 'undefined' ? window.location.pathname : '',
     });
   }, [isSignedIn, userId]);
 

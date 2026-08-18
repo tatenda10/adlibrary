@@ -4,6 +4,7 @@ import { useBilling } from '../components/billing/BillingContext.jsx';
 import { MOCK_ADS } from '../lib/mock-data.js';
 import { CubeLoaderOverlay } from '../components/CubeLoader.jsx';
 import { trackEvent } from '../lib/firebaseAnalytics.js';
+import { trackMetaViewContent } from '../lib/metaPixel.js';
 
 const PREVIEW_ITEMS = [
   ...MOCK_ADS.map((ad) => ({ ...ad, mediaType: 'image' })),
@@ -64,6 +65,10 @@ export default function OnboardingUnlock() {
 
   useEffect(() => {
     trackEvent('onboarding_unlock_viewed');
+    trackMetaViewContent({
+      content_name: 'onboarding_unlock',
+      content_category: 'pricing_teaser',
+    });
   }, []);
 
   useEffect(() => {
@@ -74,6 +79,10 @@ export default function OnboardingUnlock() {
 
   const handleUnlock = () => {
     trackEvent('onboarding_unlock_clicked');
+    trackMetaViewContent({
+      content_name: 'unlock_to_pricing',
+      content_category: 'pricing',
+    });
     const pendingPlan = typeof window !== 'undefined' ? localStorage.getItem('pending_checkout_plan') : '';
     navigate(
       pendingPlan ? `/onboarding/billing?checkoutPlan=${pendingPlan}` : '/onboarding/billing',

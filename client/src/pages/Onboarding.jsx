@@ -8,6 +8,7 @@ import {
   patchOnboardingProfile,
 } from '../lib/api.js';
 import { trackEvent } from '../lib/firebaseAnalytics.js';
+import { trackMetaCompleteRegistration, trackMetaViewContent } from '../lib/metaPixel.js';
 import { CubeLoader, CubeLoaderOverlay } from '../components/CubeLoader.jsx';
 import { useApiToast } from '../hooks/useApiToast.js';
 
@@ -63,6 +64,45 @@ function countryMatchesName(name, query) {
 }
 
 const TOTAL_STEPS = 4;
+
+const ONBOARDING_SCREENS = {
+  1: { key: 'website', label: 'Website URL', viewedEvent: 'onboarding_q_website_viewed' },
+  2: { key: 'brand', label: 'Brand details', viewedEvent: 'onboarding_q_brand_viewed' },
+  3: { key: 'markets', label: 'Markets & channels', viewedEvent: 'onboarding_q_markets_viewed' },
+  4: { key: 'voice', label: 'Brand voice', viewedEvent: 'onboarding_q_voice_viewed' },
+};
+
+const ONBOARDING_QUESTIONS = [
+  { key: 'website', label: 'Website URL', event: 'onboarding_q_website_answered' },
+  { key: 'brand_name', label: 'Brand name', event: 'onboarding_q_brand_name_answered' },
+  { key: 'industry', label: 'Industry', event: 'onboarding_q_industry_answered' },
+  { key: 'niche', label: 'Niche', event: 'onboarding_q_niche_answered' },
+  { key: 'countries', label: 'Countries', event: 'onboarding_q_countries_answered' },
+  { key: 'channels', label: 'Channels', event: 'onboarding_q_channels_answered' },
+  { key: 'story', label: 'Brand story', event: 'onboarding_q_story_answered' },
+  { key: 'ideal_customer', label: 'Ideal customer', event: 'onboarding_q_ideal_customer_answered' },
+];
+
+function questionHasValue(key, form) {
+  if (key === 'website') return Boolean(String(form.websiteUrl || '').trim());
+  if (key === 'brand_name') return Boolean(String(form.brandName || '').trim());
+  if (key === 'industry') {
+    const industry = form.industry === 'Other' ? form.industryOther : form.industry;
+    return Boolean(String(industry || '').trim());
+  }
+  if (key === 'niche') return Boolean(String(form.niche || '').trim());
+  if (key === 'countries') return Boolean((form.countries || []).length);
+  if (key === 'channels') return Boolean((form.channels || []).length);
+  if (key === 'story') return Boolean(String(form.story || '').trim());
+  if (key === 'ideal_customer') return Boolean(String(form.idealCustomers || '').trim());
+  return false;
+}
+
+function normalizeWebsiteUrlInput(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return '';
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
 
 const INDUSTRY_OPTIONS = [
   'AI & Machine Learning',
@@ -215,6 +255,8 @@ export default function Onboarding() {
   const [countryOpen, setCountryOpen] = useState(false);
   const [channelOpen, setChannelOpen] = useState(false);
   const completedRef = useRef(false);
+  const stepRef = useRef(1);
+  const answeredRef = useRef(new Set());
   const [form, setForm] = useState({
     websiteUrl: '',
     brandName: '',
@@ -235,6 +277,18 @@ export default function Onboarding() {
   const effectiveIndustry = form.industry === 'Other' ? form.industryOther : form.industry;
   const lowConfidence = form.extracted?.confidence === 'low';
   const progress = Math.round((step / TOTAL_STEPS) * 100);
+  stepRef.current = step;
+
+  const markQuestionAnswered = (questionKey) => {
+    const question = ONBOARDING_QUESTIONS.find((item) => item.key === questionKey);
+    if (!question || answeredRef.current.has(questionKey)) return;
+    answeredRef.current.add(questionKey);
+    trackEvent(question.event, {
+      question_key: question.key,
+      question_label: question.label,
+      step_key: ONBOARDING_SCREENS[stepRef.current]?.key,
+    });
+  };
 
   const filteredCountries = useMemo(() => {
     const q = String(form.countryInput || '').trim();
@@ -292,6 +346,7 @@ export default function Onboarding() {
         const restored = profileToForm(profile);
         const restoredStep = Math.min(4, Math.max(1, Number(profile.onboarding_step) || 1));
         if (Number(profile.onboarding_completed)) {
+          completedRef.current = true;
           navigate('/onboarding/unlock', { replace: true });
           return;
         }
@@ -319,26 +374,45 @@ export default function Onboarding() {
   }, [step, form.industry, form.industryOther, form.channels]);
 
   useEffect(() => {
+    if (loading || completedRef.current) return undefined;
     trackEvent('onboarding_started', { total_steps: TOTAL_STEPS });
-  }, []);
-
-  useEffect(() => {
-    trackEvent('onboarding_step_view', {
-      step_index: step - 1,
-      step_key: `step_${step}`,
-      total_steps: TOTAL_STEPS,
-    });
-  }, [step]);
-
-  useEffect(() => {
     return () => {
       if (completedRef.current) return;
+      const screen = ONBOARDING_SCREENS[stepRef.current] || ONBOARDING_SCREENS[1];
       trackEvent('onboarding_dropoff', {
-        step_index: step - 1,
-        step_key: `step_${step}`,
+        step_index: stepRef.current - 1,
+        step_key: screen.key,
+        question_label: screen.label,
       });
     };
-  }, [step]);
+  }, [loading]);
+
+  useEffect(() => {
+    if (loading) return;
+    const screen = ONBOARDING_SCREENS[step] || ONBOARDING_SCREENS[1];
+    trackEvent('onboarding_step_view', {
+      step_index: step - 1,
+      step_key: screen.key,
+      question_label: screen.label,
+      total_steps: TOTAL_STEPS,
+    });
+    trackEvent(screen.viewedEvent, {
+      step_index: step - 1,
+      step_key: screen.key,
+      question_label: screen.label,
+    });
+    trackMetaViewContent({
+      content_name: `onboarding_${screen.key}`,
+      content_category: 'onboarding',
+    });
+  }, [loading, step]);
+
+  useEffect(() => {
+    if (loading) return;
+    ['website', 'brand_name', 'industry', 'niche', 'countries', 'story', 'ideal_customer'].forEach((key) => {
+      if (questionHasValue(key, form)) markQuestionAnswered(key);
+    });
+  }, [form, loading]);
 
   const persistStep = async (nextStep, { completed = false } = {}) => {
     const token = await getToken();
@@ -351,9 +425,12 @@ export default function Onboarding() {
     try {
       await persistStep(nextStep, { completed });
       setStep(nextStep);
+      if (step === 3) markQuestionAnswered('channels');
       trackEvent('onboarding_step_continue', {
         from_step_index: step - 1,
+        from_step_key: ONBOARDING_SCREENS[step]?.key,
         to_step_index: nextStep - 1,
+        to_step_key: ONBOARDING_SCREENS[nextStep]?.key,
       });
     } catch (e) {
       notifyApiError(e, 'Failed to save your progress.');
@@ -363,14 +440,17 @@ export default function Onboarding() {
   };
 
   const back = () => {
-    trackEvent('onboarding_step_back', { from_step_index: step - 1 });
+    trackEvent('onboarding_step_back', {
+      from_step_index: step - 1,
+      from_step_key: ONBOARDING_SCREENS[step]?.key,
+    });
     setStep((prev) => Math.max(1, prev - 1));
   };
 
   const handleExtractAndContinue = async () => {
     const url = String(form.websiteUrl || '').trim();
     if (!url) {
-      showWarning('Enter your website URL, or skip for now.');
+      showWarning('Enter your website URL.');
       return;
     }
     setExtracting(true);
@@ -399,15 +479,28 @@ export default function Onboarding() {
       trackEvent('onboarding_website_extracted', {
         confidence: extracted.confidence || 'unknown',
       });
+      markQuestionAnswered('website');
     } catch (e) {
-      notifyApiError(e, 'Could not read your website. Try again or skip for now.');
+      const fallbackUrl = normalizeWebsiteUrlInput(url);
+      const nextForm = {
+        ...form,
+        websiteUrl: fallbackUrl,
+        extracted: { confidence: 'low' },
+      };
+      try {
+        const token = await getToken();
+        if (!token) throw new Error('Authentication error. Please refresh and try again.');
+        await patchOnboardingProfile(token, buildSavePayload(nextForm, 2));
+        setForm(nextForm);
+        setStep(2);
+        markQuestionAnswered('website');
+        showWarning('We could not scan your site, so please fill in your brand details manually.');
+      } catch {
+        notifyApiError(e, 'Could not read your website.');
+      }
     } finally {
       setExtracting(false);
     }
-  };
-
-  const skipToManual = async () => {
-    await goToStep(2);
   };
 
   const validateStep2 = () => {
@@ -462,6 +555,7 @@ export default function Onboarding() {
     try {
       await persistStep(4, { completed: true });
       trackEvent('onboarding_completed');
+      trackMetaCompleteRegistration({ content_name: 'onboarding_finished' });
       navigate('/onboarding/unlock', { replace: true });
     } catch (e) {
       completedRef.current = false;
@@ -496,6 +590,7 @@ export default function Onboarding() {
       return { ...prev, channels: [...(prev.channels || []), value], channelInput: '' };
     });
     setChannelOpen(false);
+    markQuestionAnswered('channels');
   };
 
   const removeChannel = (channel) => {
@@ -781,24 +876,14 @@ export default function Onboarding() {
 
             <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
               {step === 1 ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={skipToManual}
-                    disabled={saving || extracting}
-                    className="rounded-lg border border-white/15 px-4 py-2.5 text-sm font-semibold text-slate-300 disabled:opacity-40"
-                  >
-                    Skip for now
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleExtractAndContinue}
-                    disabled={saving || extracting}
-                    className="min-w-[160px] rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-black disabled:opacity-60"
-                  >
-                    {extracting ? 'Scanning website…' : 'Continue'}
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={handleExtractAndContinue}
+                  disabled={saving || extracting}
+                  className="min-w-[160px] rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-black disabled:opacity-60"
+                >
+                  {extracting ? 'Scanning website…' : 'Continue'}
+                </button>
               ) : null}
 
               {step === 2 ? (

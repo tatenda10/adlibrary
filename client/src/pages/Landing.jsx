@@ -1,18 +1,28 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SignInButton, SignUpButton } from '@clerk/clerk-react';
 import { Navbar } from '../components/layout/Navbar.jsx';
 import { SiteFooter } from '../components/layout/SiteFooter.jsx';
-import WebsiteAnalysisPreviewModal from '../components/WebsiteAnalysisPreviewModal.jsx';
+import { PlayingCardFan } from '../components/ui/PlayingCardFan.jsx';
 import { MOCK_ADS } from '../lib/mock-data.js';
-import { AdCard } from '../components/ui/AdCard.jsx';
 import {
   API_URL,
 } from '../lib/api.js';
 import { PRICING_PLANS } from '../lib/pricingPlans.js';
 import { submitSupportMessage } from '../lib/api.js';
 import { trackEvent } from '../lib/firebaseAnalytics.js';
+import { trackMetaViewContent } from '../lib/metaPixel.js';
 
 const NICHES = ['All', 'E-commerce', 'SaaS', 'Health', 'Tech', 'Fintech'];
+
+const HERO_FAN_CARDS = [
+  { id: 'ace-spades', rank: 'A', suit: 'spades' },
+  { id: 'king-hearts', rank: 'K', suit: 'hearts' },
+  { id: 'queen-diamonds', rank: 'Q', suit: 'diamonds' },
+  { id: 'jack-clubs', rank: 'J', suit: 'clubs' },
+  { id: 'ten-hearts', rank: '10', suit: 'hearts' },
+  { id: 'ace-diamonds', rank: 'A', suit: 'diamonds' },
+  { id: 'nine-spades', rank: '9', suit: 'spades' },
+];
 
 const FEATURE_BLOCKS = [
   {
@@ -145,8 +155,6 @@ const TESTIMONIALS = [
 function Landing() {
   const [activeNiche, setActiveNiche] = useState('All');
   const [showOfferModal, setShowOfferModal] = useState(true);
-  const [websiteUrl, setWebsiteUrl] = useState('');
-  const [analysisOpen, setAnalysisOpen] = useState(false);
   const [showcaseVideos, setShowcaseVideos] = useState(() => pickRandomItems(FALLBACK_VIDEO_SHOWCASE, 4));
   const [isRefreshingShowcase, setIsRefreshingShowcase] = useState(false);
   const [showcaseStatus, setShowcaseStatus] = useState('');
@@ -156,10 +164,6 @@ function Landing() {
   const [chatError, setChatError] = useState('');
   const [chatForm, setChatForm] = useState({ name: '', email: '', message: '' });
   const [testimonialIndex, setTestimonialIndex] = useState(2);
-  const [stickyOffset, setStickyOffset] = useState({ x: 0, y: 0 });
-  const heroSectionRef = useRef(null);
-  const stickyNoteRef = useRef(null);
-  const dragStateRef = useRef(null);
 
   const filteredAds = activeNiche === 'All'
     ? MOCK_ADS
@@ -184,6 +188,10 @@ function Landing() {
     trackEvent('landing_viewed', {
       section: 'hero',
     });
+    trackMetaViewContent({
+      content_name: 'landing',
+      content_category: 'marketing',
+    });
   }, []);
 
   useEffect(() => {
@@ -191,67 +199,6 @@ function Landing() {
     const timer = window.setTimeout(() => setShowcaseStatus(''), 2600);
     return () => window.clearTimeout(timer);
   }, [showcaseStatus]);
-
-  useEffect(() => {
-    return () => {
-      window.removeEventListener('pointermove', handleStickyPointerMove);
-      window.removeEventListener('pointerup', handleStickyPointerUp);
-    };
-  }, []);
-
-  const clampStickyOffset = useCallback((nextX, nextY) => {
-    const section = heroSectionRef.current;
-    if (!section) return { x: nextX, y: nextY };
-
-    const sectionRect = section.getBoundingClientRect();
-    const minX = -dragStateRef.current.baseLeft + sectionRect.left + 8;
-    const maxX = sectionRect.right - dragStateRef.current.baseRight - 8;
-    const minY = -dragStateRef.current.baseTop + sectionRect.top + 8;
-    const maxY = sectionRect.bottom - dragStateRef.current.baseBottom - 8;
-
-    return {
-      x: Math.min(maxX, Math.max(minX, nextX)),
-      y: Math.min(maxY, Math.max(minY, nextY)),
-    };
-  }, []);
-
-  const handleStickyPointerMove = useCallback((event) => {
-    const drag = dragStateRef.current;
-    if (!drag) return;
-    const deltaX = event.clientX - drag.startX;
-    const deltaY = event.clientY - drag.startY;
-    const next = clampStickyOffset(drag.startOffsetX + deltaX, drag.startOffsetY + deltaY);
-    setStickyOffset(next);
-  }, [clampStickyOffset]);
-
-  const handleStickyPointerUp = useCallback(() => {
-    dragStateRef.current = null;
-    window.removeEventListener('pointermove', handleStickyPointerMove);
-    window.removeEventListener('pointerup', handleStickyPointerUp);
-  }, [handleStickyPointerMove]);
-
-  const handleStickyPointerDown = (event) => {
-    if (event.target.closest('input,button,a')) return;
-    const section = heroSectionRef.current;
-    const note = stickyNoteRef.current;
-    if (!section || !note) return;
-
-    const sectionRect = section.getBoundingClientRect();
-    const noteRect = note.getBoundingClientRect();
-    dragStateRef.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      startOffsetX: stickyOffset.x,
-      startOffsetY: stickyOffset.y,
-      baseLeft: noteRect.left - stickyOffset.x,
-      baseRight: noteRect.right - stickyOffset.x,
-      baseTop: noteRect.top - stickyOffset.y,
-      baseBottom: noteRect.bottom - stickyOffset.y,
-    };
-
-    window.addEventListener('pointermove', handleStickyPointerMove);
-    window.addEventListener('pointerup', handleStickyPointerUp);
-  };
 
   const handleRefreshShowcase = async () => {
     try {
@@ -310,9 +257,9 @@ function Landing() {
 
       <Navbar />
 
-      <section ref={heroSectionRef} className="relative overflow-hidden border-b border-white/8 px-4 pb-16 pt-24">
+      <section className="relative overflow-hidden border-b border-white/8 px-4 pb-16 pt-24">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_20%,rgba(34,197,94,0.12),transparent_30%),radial-gradient(circle_at_85%_10%,rgba(34,197,94,0.08),transparent_24%),linear-gradient(180deg,#020202_0%,#070707_100%)]" />
-        <div className="relative z-10 mx-auto grid w-full max-w-[1280px] gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
+        <div className="relative z-10 mx-auto grid w-full max-w-[1280px] gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
               <span className="inline-block h-2 w-2 rounded-full bg-emerald-300" />
@@ -320,11 +267,11 @@ function Landing() {
             </div>
 
             <h1 className="mt-5 text-3xl font-semibold leading-tight tracking-tight md:text-5xl">
-              Find winning ad creative faster across TikTok, Instagram, Facebook, and Google Ads.
+              Find winning ad creative faster with AI agents across TikTok, Instagram, Facebook, and Google Ads.
             </h1>
 
             <p className="mt-5 max-w-xl text-base leading-7 text-slate-300 md:text-xl">
-              Search proven ad examples, spot repeatable angles, score concepts before launch, and hand your team a clearer creative direction.
+              Search proven ad examples, spot repeatable angles, and let AI agents score concepts before launch so your team ships clearer creative direction.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
@@ -346,58 +293,10 @@ function Landing() {
                 See the Library
               </a>
             </div>
-
           </div>
 
-          <div className="grid items-center justify-center gap-4 lg:-mt-6">
-            <div className="w-full max-w-xl rounded-[2rem] p-5">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Website CRO Check</p>
-                  <h2 className="mt-1 text-lg font-semibold">Let's rate your website</h2>
-                </div>
-                <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
-                  Instant Preview
-                </span>
-              </div>
-              <p className="mt-3 text-sm text-slate-400">
-                Paste your website URL and get a quick conversion-focused score preview before you create your account.
-              </p>
-              <div className="mt-5">
-                <div
-                  ref={stickyNoteRef}
-                  onPointerDown={handleStickyPointerDown}
-                  style={{ transform: `translate3d(${stickyOffset.x}px, ${stickyOffset.y}px, 0)` }}
-                  className="noteHolder noteHolderHero active:cursor-grabbing"
-                >
-                  <input id="hero-fold-note" type="checkbox" className="noteFoldToggle" />
-                  <div className="note rounded note-green">
-                    <span className="heroNotePin heroNotePinLeft" />
-                    <span className="heroNotePin heroNotePinRight" />
-                    <div className="heroNoteBody">
-                      <p className="heroNoteTitle">Website URL</p>
-                      <div className="heroNoteInputRow">
-                        <input
-                          value={websiteUrl}
-                          onChange={(event) => setWebsiteUrl(event.target.value)}
-                          placeholder="https://yourwebsite.com"
-                          className="heroNoteInput"
-                        />
-                        {websiteUrl.trim() ? (
-                          <button
-                            type="button"
-                            onClick={() => setAnalysisOpen(true)}
-                            className="heroNoteAnalyzeBtn"
-                          >
-                            Analyze
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+          <div className="relative mx-auto h-[360px] w-full max-w-xl overflow-hidden lg:h-[420px]">
+            <PlayingCardFan cards={HERO_FAN_CARDS} cardWidth={108} />
           </div>
         </div>
       </section>
@@ -747,16 +646,6 @@ function Landing() {
           </div>
         </div>
       ) : null}
-
-      {analysisOpen ? (
-        <WebsiteAnalysisPreviewModal
-          websiteUrl={websiteUrl}
-          onClose={() => setAnalysisOpen(false)}
-          onSeeMore={() => {
-            storePendingOnboarding(websiteUrl);
-          }}
-        />
-      ) : null}
     </div>
   );
 }
@@ -902,20 +791,6 @@ function storePendingCheckoutPlan(planKey) {
     localStorage.removeItem('pending_app_flow');
     localStorage.removeItem('pending_website_url');
     localStorage.setItem('pending_checkout_plan', planKey);
-  } catch {
-    // Ignore storage errors and continue with auth flow.
-  }
-}
-
-function storePendingOnboarding(websiteUrl = '') {
-  try {
-    localStorage.removeItem('pending_checkout_plan');
-    localStorage.setItem('pending_app_flow', 'onboarding');
-    if (String(websiteUrl || '').trim()) {
-      localStorage.setItem('pending_website_url', String(websiteUrl).trim());
-    } else {
-      localStorage.removeItem('pending_website_url');
-    }
   } catch {
     // Ignore storage errors and continue with auth flow.
   }

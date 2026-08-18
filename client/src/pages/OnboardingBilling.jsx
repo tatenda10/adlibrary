@@ -5,6 +5,8 @@ import { PRICING_PLANS } from '../lib/pricingPlans.js';
 import { CubeLoaderOverlay } from '../components/CubeLoader.jsx';
 import { showInfoToast } from '../lib/toast.js';
 import { trackEvent } from '../lib/firebaseAnalytics.js';
+import { trackCheckoutCompletedFromBilling, trackCheckoutStarted } from '../lib/metaPixelCheckout.js';
+import { trackMetaViewContent } from '../lib/metaPixel.js';
 
 function OnboardingBilling() {
   const navigate = useNavigate();
@@ -40,6 +42,13 @@ function OnboardingBilling() {
         if (cancelled) return;
         if (isActive) {
           setCheckoutNotice('success');
+          trackCheckoutCompletedFromBilling(data?.subscription, {
+            planKey: checkoutPlan || data?.subscription?.plan_key || data?.subscription?.current_plan,
+            eventId:
+              searchParams.get('payment_id') ||
+              searchParams.get('subscription_id') ||
+              undefined,
+          });
           const nextParams = new URLSearchParams(searchParams);
           nextParams.delete('checkout');
           setSearchParams(nextParams, { replace: true });
@@ -71,6 +80,13 @@ function OnboardingBilling() {
       checkout_state: checkoutState || 'initial',
       checkout_plan: checkoutPlan,
     });
+    if (checkoutState !== 'success') {
+      trackMetaViewContent({
+        content_name: 'onboarding_pricing',
+        content_category: 'pricing',
+        content_ids: checkoutPlan ? [checkoutPlan] : undefined,
+      });
+    }
   }, [checkoutPlan, checkoutState]);
 
   useEffect(() => {
@@ -91,6 +107,7 @@ function OnboardingBilling() {
     try {
       setActionLoading(planKey);
       trackEvent('onboarding_billing_checkout_started', { plan_key: planKey });
+      trackCheckoutStarted(planKey, 'onboarding');
       await beginCheckout(planKey, { flow: 'onboarding' });
     } catch (err) {
       console.error(err);
