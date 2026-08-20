@@ -2,6 +2,8 @@ const pool = require('../db/connection');
 
 const ONBOARDING_MILESTONES = [
   { key: 'onboarding_started', label: 'Started onboarding' },
+  { key: 'onboarding_q_role_viewed', label: 'Who are you' },
+  { key: 'onboarding_q_role_answered', label: 'Your role' },
   { key: 'onboarding_q_website_viewed', label: 'Website URL' },
   { key: 'onboarding_q_brand_name_answered', label: 'Brand name' },
   { key: 'onboarding_q_industry_answered', label: 'Industry' },
@@ -11,12 +13,25 @@ const ONBOARDING_MILESTONES = [
   { key: 'onboarding_q_story_answered', label: 'Brand story' },
   { key: 'onboarding_q_ideal_customer_answered', label: 'Ideal customer' },
   { key: 'onboarding_completed', label: 'Completed onboarding' },
+];
+
+const BILLING_MILESTONES = [
   { key: 'onboarding_unlock_viewed', label: 'Viewed unlock teaser' },
+  { key: 'onboarding_unlock_clicked', label: 'Clicked unlock' },
   { key: 'onboarding_billing_viewed', label: 'Viewed billing' },
+  { key: 'onboarding_billing_plan_selected', label: 'Selected a plan' },
   { key: 'onboarding_billing_checkout_started', label: 'Started checkout' },
+  { key: 'onboarding_billing_payment_success', label: 'Paid successfully' },
+];
+
+const BILLING_OUTCOME_EVENTS = [
+  { key: 'onboarding_billing_checkout_canceled', label: 'Returned without paying' },
+  { key: 'onboarding_billing_checkout_failed', label: 'Checkout failed' },
+  { key: 'onboarding_billing_agency_clicked', label: 'Clicked Agency / Talk to sales' },
 ];
 
 const QUESTION_ANSWER_EVENTS = [
+  { key: 'onboarding_q_role_answered', label: 'Your role' },
   { key: 'onboarding_q_website_answered', label: 'Website URL' },
   { key: 'onboarding_q_website_skipped', label: 'Skipped website' },
   { key: 'onboarding_q_brand_name_answered', label: 'Brand name' },
@@ -29,6 +44,7 @@ const QUESTION_ANSWER_EVENTS = [
 ];
 
 const QUESTION_LABELS = {
+  role: 'Your role',
   website: 'Website URL',
   brand: 'Brand details',
   brand_name: 'Brand name',
@@ -40,11 +56,35 @@ const QUESTION_LABELS = {
   voice: 'Brand voice',
   story: 'Brand story',
   ideal_customer: 'Ideal customer',
-  step_1: 'Website URL',
-  step_2: 'Brand details',
-  step_3: 'Markets & channels',
-  step_4: 'Brand voice',
+  step_1: 'Your role',
+  step_2: 'Website URL',
+  step_3: 'Brand details',
+  step_4: 'Markets & channels',
+  step_5: 'Brand voice',
+  unlock: 'Unlock teaser',
+  billing: 'Billing / plans',
+  checkout: 'Payment checkout',
 };
+
+const ROLE_FLOW_DEFS = [
+  { key: 'founder', label: 'Founder' },
+  { key: 'media_buyer', label: 'Solo media buyer' },
+  { key: 'in_house', label: 'In-house growth' },
+  { key: 'agency', label: 'Agency / operator' },
+  { key: 'unknown', label: 'No role yet' },
+];
+
+function mapEventCounts(list, countsByEvent) {
+  return list.map((step) => {
+    const row = countsByEvent.get(step.key) || {};
+    return {
+      key: step.key,
+      label: step.label,
+      total: Number(row.total || 0),
+      unique_users: Number(row.unique_users || 0),
+    };
+  });
+}
 
 function safeDays(raw) {
   return Math.min(Math.max(Number(raw) || 7, 1), 90);
@@ -201,25 +241,10 @@ async function getOnboardingAnalytics({ days = 30 } = {}) {
 
   const countsByEvent = new Map((milestoneRows || []).map((row) => [row.event_name, row]));
 
-  const funnel = ONBOARDING_MILESTONES.map((step) => {
-    const row = countsByEvent.get(step.key) || {};
-    return {
-      key: step.key,
-      label: step.label,
-      total: Number(row.total || 0),
-      unique_users: Number(row.unique_users || 0),
-    };
-  });
-
-  const questionAnswers = QUESTION_ANSWER_EVENTS.map((step) => {
-    const row = countsByEvent.get(step.key) || {};
-    return {
-      key: step.key,
-      label: step.label,
-      total: Number(row.total || 0),
-      unique_users: Number(row.unique_users || 0),
-    };
-  });
+  const funnel = mapEventCounts(ONBOARDING_MILESTONES, countsByEvent);
+  const billingFunnel = mapEventCounts(BILLING_MILESTONES, countsByEvent);
+  const billingOutcomes = mapEventCounts(BILLING_OUTCOME_EVENTS, countsByEvent);
+  const questionAnswers = mapEventCounts(QUESTION_ANSWER_EVENTS, countsByEvent);
 
   const [stepViews] = await pool.query(
     `SELECT props_json, user_id, session_id
@@ -254,7 +279,7 @@ async function getOnboardingAnalytics({ days = 30 } = {}) {
   const [dropoffRows] = await pool.query(
     `SELECT props_json, user_id
      FROM product_events
-     WHERE event_name = 'onboarding_dropoff'
+     WHERE event_name IN ('onboarding_dropoff', 'onboarding_billing_dropoff')
        AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
      LIMIT 2000`,
     [safeDaysVal]
@@ -264,20 +289,145 @@ async function getOnboardingAnalytics({ days = 30 } = {}) {
   for (const row of dropoffRows || []) {
     const props = parseJson(row.props_json) || {};
     const stepKey = String(props.step_key || props.question_label || 'unknown');
-    const entry = dropoffBreakdown.get(stepKey) || { step_key: stepKey, total: 0, users: new Set() };
+    const role = String(props.audience_role || props.audienceRole || 'unknown');
+    const bucket = `${role}::${stepKey}`;
+    const entry = dropoffBreakdown.get(bucket) || { step_key: stepKey, role, total: 0, users: new Set() };
     entry.total += 1;
     if (row.user_id) entry.users.add(row.user_id);
-    dropoffBreakdown.set(stepKey, entry);
+    dropoffBreakdown.set(bucket, entry);
   }
 
   const dropoffs = [...dropoffBreakdown.values()]
     .map((entry) => ({
       step_key: entry.step_key,
       label: QUESTION_LABELS[entry.step_key] || entry.step_key,
+      role: entry.role,
       total: entry.total,
       unique_users: entry.users.size,
     }))
     .sort((a, b) => b.total - a.total);
+
+  const [planRows] = await pool.query(
+    `SELECT props_json, user_id
+     FROM product_events
+     WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+       AND event_name IN (
+         'onboarding_billing_plan_selected',
+         'onboarding_billing_checkout_started',
+         'onboarding_billing_payment_success'
+       )
+     LIMIT 2000`,
+    [safeDaysVal]
+  );
+
+  const planBreakdown = new Map();
+  for (const row of planRows || []) {
+    const props = parseJson(row.props_json) || {};
+    const planKey = String(props.plan_key || props.checkout_plan || 'unknown');
+    const entry = planBreakdown.get(planKey) || { plan_key: planKey, total: 0, users: new Set() };
+    entry.total += 1;
+    if (row.user_id) entry.users.add(row.user_id);
+    planBreakdown.set(planKey, entry);
+  }
+
+  const plans = [...planBreakdown.values()]
+    .map((entry) => ({
+      plan_key: entry.plan_key,
+      total: entry.total,
+      unique_users: entry.users.size,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const [roleEventRows] = await pool.query(
+    `SELECT event_name, user_id, props_json
+     FROM product_events
+     WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+       AND event_name LIKE 'onboarding_%'
+     ORDER BY created_at ASC
+     LIMIT 8000`,
+    [safeDaysVal]
+  );
+
+  const knownRoleByUser = new Map();
+  for (const row of roleEventRows || []) {
+    const props = parseJson(row.props_json) || {};
+    const role = String(props.audience_role || props.audienceRole || '').trim();
+    if (role && row.user_id) knownRoleByUser.set(row.user_id, role);
+  }
+
+  function resolveRole(row) {
+    const props = parseJson(row.props_json) || {};
+    const fromProps = String(props.audience_role || props.audienceRole || '').trim();
+    if (fromProps) return fromProps;
+    if (row.user_id && knownRoleByUser.has(row.user_id)) return knownRoleByUser.get(row.user_id);
+    return 'unknown';
+  }
+
+  const countsByRoleEvent = new Map();
+  for (const row of roleEventRows || []) {
+    const role = resolveRole(row);
+    const key = `${role}::${row.event_name}`;
+    const entry = countsByRoleEvent.get(key) || { total: 0, users: new Set() };
+    entry.total += 1;
+    if (row.user_id) entry.users.add(row.user_id);
+    countsByRoleEvent.set(key, entry);
+  }
+
+  function roleEventStats(role, eventName) {
+    const entry = countsByRoleEvent.get(`${role}::${eventName}`) || { total: 0, users: new Set() };
+    return { total: entry.total, unique_users: entry.users.size };
+  }
+
+  const roleFunnels = ROLE_FLOW_DEFS.map((role) => {
+    const steps = ONBOARDING_MILESTONES.map((step) => {
+      const stats = roleEventStats(role.key, step.key);
+      return {
+        key: step.key,
+        label: step.label,
+        total: stats.total,
+        unique_users: stats.unique_users,
+      };
+    });
+    const billing = BILLING_MILESTONES.map((step) => {
+      const stats = roleEventStats(role.key, step.key);
+      return {
+        key: step.key,
+        label: step.label,
+        total: stats.total,
+        unique_users: stats.unique_users,
+      };
+    });
+    const started = roleEventStats(role.key, 'onboarding_q_role_answered').unique_users
+      || roleEventStats(role.key, 'onboarding_started').unique_users;
+    const completed = roleEventStats(role.key, 'onboarding_completed').unique_users;
+    const paid = roleEventStats(role.key, 'onboarding_billing_payment_success').unique_users;
+    return {
+      role: role.key,
+      label: role.label,
+      started,
+      completed,
+      paid,
+      completion_rate: started > 0 ? Math.round((completed / started) * 1000) / 10 : 0,
+      funnel: steps,
+      billing_funnel: billing,
+    };
+  }).filter((row) => row.started || row.completed || row.paid);
+
+  const roleBreakdown = ROLE_FLOW_DEFS.map((role) => {
+    const started = roleEventStats(role.key, 'onboarding_q_role_answered').unique_users
+      || roleEventStats(role.key, 'onboarding_started').unique_users;
+    const completed = roleEventStats(role.key, 'onboarding_completed').unique_users;
+    const unlockViewedRole = roleEventStats(role.key, 'onboarding_unlock_viewed').unique_users;
+    const paidRole = roleEventStats(role.key, 'onboarding_billing_payment_success').unique_users;
+    return {
+      role: role.key,
+      label: role.label,
+      started,
+      completed,
+      unlock_viewed: unlockViewedRole,
+      paid: paidRole,
+    };
+  }).filter((row) => row.started || row.completed || row.unlock_viewed || row.paid || row.role !== 'unknown');
 
   const [recent] = await pool.query(
     `SELECT id, user_id, event_name, page_path, props_json, created_at
@@ -292,14 +442,23 @@ async function getOnboardingAnalytics({ days = 30 } = {}) {
   const started = Number(countsByEvent.get('onboarding_started')?.unique_users || 0);
   const completed = Number(countsByEvent.get('onboarding_completed')?.unique_users || 0);
   const completionRate = started > 0 ? Math.round((completed / started) * 1000) / 10 : 0;
+  const unlockViewed = Number(countsByEvent.get('onboarding_unlock_viewed')?.unique_users || 0);
+  const paid = Number(countsByEvent.get('onboarding_billing_payment_success')?.unique_users || 0);
+  const billingConversionRate = unlockViewed > 0 ? Math.round((paid / unlockViewed) * 1000) / 10 : 0;
 
   return {
     days: safeDaysVal,
     funnel,
+    billing_funnel: billingFunnel,
+    billing_outcomes: billingOutcomes,
+    plan_breakdown: plans,
+    role_breakdown: roleBreakdown,
+    role_funnels: roleFunnels,
     question_answers: questionAnswers,
     step_breakdown: steps,
     dropoffs,
     completion_rate: completionRate,
+    billing_conversion_rate: billingConversionRate,
     recent: (recent || []).map(normalizeEventRow),
   };
 }

@@ -344,11 +344,8 @@ function EventDetailPanel({ detail }) {
   );
 }
 
-function OnboardingTab({ loading, data }) {
-  if (loading) return <p className="text-sm text-[#9ca3af]">Loading onboarding analytics…</p>;
-  if (!data) return null;
-
-  const funnelSteps = (data.funnel || []).map((step, index, arr) => {
+function toFunnelSteps(rows = []) {
+  return (rows || []).map((step, index, arr) => {
     const users = Number(step.unique_users || 0);
     const nextUsers = Number(arr[index + 1]?.unique_users || 0);
     const abandonments = index < arr.length - 1 ? Math.max(users - nextUsers, 0) : 0;
@@ -362,10 +359,18 @@ function OnboardingTab({ loading, data }) {
       abandonment_rate: users > 0 ? abandonments / users : 0,
     };
   });
+}
+
+function OnboardingTab({ loading, data }) {
+  if (loading) return <p className="text-sm text-[#9ca3af]">Loading onboarding analytics…</p>;
+  if (!data) return null;
+
+  const funnelSteps = toFunnelSteps(data.funnel);
+  const billingSteps = toFunnelSteps(data.billing_funnel);
 
   return (
     <>
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <AdminMetricCard
           label="Completion rate"
           value={`${data.completion_rate || 0}%`}
@@ -382,19 +387,150 @@ function OnboardingTab({ loading, data }) {
           value={String(data.funnel?.find((s) => s.key === 'onboarding_completed')?.unique_users || 0)}
           detail="Finished setup"
         />
+        <AdminMetricCard
+          label="Paid"
+          value={String(data.billing_funnel?.find((s) => s.key === 'onboarding_billing_payment_success')?.unique_users || 0)}
+          detail={`${data.billing_conversion_rate || 0}% unlock → paid`}
+        />
       </div>
 
-      <GaFunnelChart
-        title="Onboarding"
-        subtitle="Mirrored event funnel"
-        badge={<AdminBadge>Database copy</AdminBadge>}
-        steps={funnelSteps}
-        summary={{
-          entered: funnelSteps[0]?.active_users || 0,
-          completed: funnelSteps.find((s) => s.event === 'onboarding_completed')?.active_users || 0,
-          overall_conversion: (data.completion_rate || 0) / 100,
-        }}
-      />
+      <div className="grid gap-4 xl:grid-cols-2">
+        <GaFunnelChart
+          title="Onboarding (all roles)"
+          subtitle="Combined setup questions"
+          badge={<AdminBadge>Database copy</AdminBadge>}
+          steps={funnelSteps}
+          summary={{
+            entered: funnelSteps[0]?.active_users || 0,
+            completed: funnelSteps.find((s) => s.event === 'onboarding_completed')?.active_users || 0,
+            overall_conversion: (data.completion_rate || 0) / 100,
+          }}
+        />
+
+        <GaFunnelChart
+          title="Billing (all roles)"
+          subtitle="Combined unlock → plan → pay"
+          badge={<AdminBadge>Database copy</AdminBadge>}
+          steps={billingSteps}
+          summary={{
+            entered: billingSteps[0]?.active_users || 0,
+            completed: billingSteps.find((s) => s.event === 'onboarding_billing_payment_success')?.active_users || 0,
+            overall_conversion: (data.billing_conversion_rate || 0) / 100,
+          }}
+        />
+      </div>
+
+      {(data.role_breakdown || []).length ? (
+        <AdminCard>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Flows by role</p>
+          <p className="mt-1 text-xs text-[#7f8ba0]">
+            Which onboarding path people chose: founder, media buyer, in-house, or agency.
+          </p>
+          <div className="mt-4 overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="text-[11px] uppercase tracking-[0.12em] text-[#7f8ba0]">
+                <tr>
+                  <th className="py-2 pr-4 font-medium">Flow</th>
+                  <th className="py-2 pr-4 font-medium">Entered</th>
+                  <th className="py-2 pr-4 font-medium">Completed</th>
+                  <th className="py-2 pr-4 font-medium">Unlock</th>
+                  <th className="py-2 pr-4 font-medium">Paid</th>
+                  <th className="py-2 font-medium">Unlock → paid</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.role_breakdown.map((row) => (
+                  <tr key={row.role} className="border-t border-white/8">
+                    <td className="py-2 pr-4 text-white">{row.label}</td>
+                    <td className="py-2 pr-4 text-[#9ca3af]">{row.started}</td>
+                    <td className="py-2 pr-4 text-[#9ca3af]">{row.completed}</td>
+                    <td className="py-2 pr-4 text-[#9ca3af]">{row.unlock_viewed}</td>
+                    <td className="py-2 pr-4 text-[#9ca3af]">{row.paid}</td>
+                    <td className="py-2 text-[#9ca3af]">
+                      {row.unlock_viewed
+                        ? `${Math.round((row.paid / row.unlock_viewed) * 1000) / 10}%`
+                        : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </AdminCard>
+      ) : null}
+
+      {(data.role_funnels || []).some((row) => row.started || row.completed) ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {data.role_funnels
+            .filter((row) => row.started || row.completed || row.paid)
+            .map((row) => (
+              <div key={row.role} className="grid gap-4">
+                <GaFunnelChart
+                  title={`${row.label} · setup`}
+                  subtitle="This role’s onboarding questions"
+                  badge={<AdminBadge>{row.completion_rate}% completed</AdminBadge>}
+                  steps={toFunnelSteps(row.funnel)}
+                  summary={{
+                    entered: row.started,
+                    completed: row.completed,
+                    overall_conversion: (row.completion_rate || 0) / 100,
+                  }}
+                />
+                <GaFunnelChart
+                  title={`${row.label} · billing`}
+                  subtitle="This role’s unlock → pay"
+                  badge={<AdminBadge>{row.paid} paid</AdminBadge>}
+                  steps={toFunnelSteps(row.billing_funnel)}
+                  summary={{
+                    entered: row.billing_funnel?.[0]?.unique_users || 0,
+                    completed: row.paid,
+                    overall_conversion:
+                      (row.billing_funnel?.[0]?.unique_users || 0) > 0
+                        ? row.paid / row.billing_funnel[0].unique_users
+                        : 0,
+                  }}
+                />
+              </div>
+            ))}
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {(data.billing_outcomes || []).length ? (
+          <AdminCard>
+            <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Billing outcomes</p>
+            <p className="mt-1 text-xs text-[#7f8ba0]">
+              Card details are entered on the payment page. “Returned without paying” means they left checkout before completing.
+            </p>
+            <ul className="mt-4 space-y-2">
+              {data.billing_outcomes.map((row) => (
+                <li key={row.key} className="flex justify-between text-sm">
+                  <span className="text-white">{row.label}</span>
+                  <span className="text-[#9ca3af]">
+                    {row.total} hits · {row.unique_users} users
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </AdminCard>
+        ) : null}
+
+        {(data.plan_breakdown || []).length ? (
+          <AdminCard>
+            <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Plans selected</p>
+            <ul className="mt-4 space-y-2">
+              {data.plan_breakdown.map((row) => (
+                <li key={row.plan_key} className="flex justify-between text-sm">
+                  <span className="text-white capitalize">{row.plan_key}</span>
+                  <span className="text-[#9ca3af]">
+                    {row.total} hits · {row.unique_users} users
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </AdminCard>
+        ) : null}
+      </div>
 
       {(data.question_answers || []).length ? (
         <AdminCard>
@@ -430,11 +566,14 @@ function OnboardingTab({ loading, data }) {
 
       {(data.dropoffs || []).length ? (
         <AdminCard>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-rose-300">Left on this question</p>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-rose-300">Left on this step</p>
           <ul className="mt-4 space-y-2">
             {data.dropoffs.map((row) => (
-              <li key={row.step_key} className="flex justify-between text-sm">
-                <span className="text-white">{row.label || row.step_key}</span>
+              <li key={`${row.role || 'unknown'}::${row.step_key}`} className="flex justify-between text-sm">
+                <span className="text-white">
+                  {row.label || row.step_key}
+                  {row.role && row.role !== 'unknown' ? ` · ${row.role}` : ''}
+                </span>
                 <span className="text-[#9ca3af]">
                   {row.total} leaves · {row.unique_users} users
                 </span>
@@ -621,6 +760,7 @@ function ActivityRow({ row, compact = false }) {
         {row.page_path || '—'}
         {row.user_id ? ` · user ${row.user_id.slice(0, 12)}…` : ' · anonymous'}
         {row.props?.step_key ? ` · step ${row.props.step_key}` : ''}
+        {row.props?.audience_role ? ` · ${row.props.audience_role}` : ''}
       </p>
     </li>
   );

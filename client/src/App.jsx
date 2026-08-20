@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
-import { useAuth } from '@clerk/clerk-react';
+import { useAuth, useClerk } from '@clerk/clerk-react';
 import DashboardLayout from './components/DashboardLayout.jsx';
 import CroAudit from './pages/CroAudit.jsx';
 import Bookmarks from './pages/Bookmarks.jsx';
@@ -44,13 +44,30 @@ import CompetitorAngleMap from './pages/CompetitorAngleMap.jsx';
 import Blog from './pages/Blog.jsx';
 import SavedPlans from './pages/SavedPlans.jsx';
 import MonthlySocialMediaPlanner from './components/decision-engine/MonthlySocialMediaPlanner.jsx';
-import { getOnboardingStatus } from './lib/api.js';
+import { getOnboardingStatus, setAuthExpiredHandler } from './lib/api.js';
+import { preloadUnlockShowcase } from './lib/unlockShowcase.js';
 import { useBilling } from './components/billing/BillingContext.jsx';
 import { RequirePaidAccess, RequireProAccess } from './components/billing/BillingRouteGuards.jsx';
 import { CubeLoaderOverlay } from './components/CubeLoader.jsx';
 import { trackPageView } from './lib/firebaseAnalytics.js';
 import AnalyticsBridge from './components/AnalyticsBridge.jsx';
 import MetaPixelBridge from './components/MetaPixelBridge.jsx';
+
+function AuthExpiredListener() {
+  const { signOut } = useClerk();
+  const { getToken } = useAuth();
+
+  useEffect(() => {
+    setAuthExpiredHandler(async () => {
+      const freshToken = await getToken({ skipCache: true });
+      if (freshToken) return;
+      await signOut({ redirectUrl: '/' });
+    });
+    return () => setAuthExpiredHandler(null);
+  }, [getToken, signOut]);
+
+  return null;
+}
 
 function AppLoadingScreen() {
   return <CubeLoaderOverlay minHeight="100vh" className="min-h-screen bg-[#080808]" />;
@@ -95,6 +112,11 @@ function RequireOnboarding() {
   const { isLoaded, isSignedIn, getToken } = useAuth();
   const [checking, setChecking] = useState(true);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
+
+  useEffect(() => {
+    if (!isSignedIn) return;
+    preloadUnlockShowcase();
+  }, [isSignedIn]);
 
   useEffect(() => {
     let cancelled = false;
@@ -179,6 +201,7 @@ function App() {
 
   return (
     <>
+      <AuthExpiredListener />
       <AnalyticsBridge />
       <MetaPixelBridge />
       <Routes>

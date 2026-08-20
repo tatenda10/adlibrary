@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuth } from '@clerk/clerk-react';
 import { useBilling } from '../components/billing/BillingContext.jsx';
 import { PRICING_PLANS } from '../lib/pricingPlans.js';
 import { CubeLoaderOverlay } from '../components/CubeLoader.jsx';
 import { showInfoToast } from '../lib/toast.js';
+import { getBrandProfile } from '../lib/api.js';
 import { trackEvent } from '../lib/firebaseAnalytics.js';
 import { trackCheckoutCompletedFromBilling, trackCheckoutStarted } from '../lib/metaPixelCheckout.js';
 import { trackMetaViewContent } from '../lib/metaPixel.js';
@@ -11,12 +13,40 @@ import { trackMetaViewContent } from '../lib/metaPixel.js';
 function OnboardingBilling() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { getToken } = useAuth();
   const { beginCheckout, refreshBilling, loading, subscription } = useBilling();
   const [actionLoading, setActionLoading] = useState('');
   const [checkoutNotice, setCheckoutNotice] = useState('');
+  const progressedRef = useRef(false);
+  const roleRef = useRef('');
+
+  const withRole = (params = {}) => ({
+    ...params,
+    audience_role: roleRef.current || '',
+  });
 
   const checkoutPlan = searchParams.get('checkoutPlan') || '';
   const checkoutState = searchParams.get('checkout') || '';
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadRole() {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const profile = await getBrandProfile(token);
+        const prefs = profile?.preferences;
+        const parsed = typeof prefs === 'string' ? JSON.parse(prefs || '{}') : prefs || {};
+        if (!cancelled) roleRef.current = parsed.audienceRole || '';
+      } catch {
+        // keep empty role
+      }
+    }
+    loadRole();
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken]);
 
   useEffect(() => {
     if (!checkoutState) {
@@ -26,6 +56,9 @@ function OnboardingBilling() {
     if (checkoutState === 'canceled') {
       setCheckoutNotice('canceled');
       showInfoToast('Payment canceled. Choose a plan below to continue.');
+      trackEvent('onboarding_billing_checkout_canceled', withRole({
+        plan_key: checkoutPlan || '',
+      }));
       const nextParams = new URLSearchParams(searchParams);
       nextParams.delete('checkout');
       setSearchParams(nextParams, { replace: true });
@@ -42,6 +75,10 @@ function OnboardingBilling() {
         if (cancelled) return;
         if (isActive) {
           setCheckoutNotice('success');
+          progressedRef.current = true;
+          trackEvent('onboarding_billing_payment_success', withRole({
+            plan_key: checkoutPlan || data?.subscription?.plan_key || data?.subscription?.current_plan || '',
+          }));
           trackCheckoutCompletedFromBilling(data?.subscription, {
             planKey: checkoutPlan || data?.subscription?.plan_key || data?.subscription?.current_plan,
             eventId:
@@ -76,10 +113,10 @@ function OnboardingBilling() {
   }, [checkoutState, navigate, refreshBilling, searchParams, setSearchParams]);
 
   useEffect(() => {
-    trackEvent('onboarding_billing_viewed', {
+    trackEvent('onboarding_billing_viewed', withRole({
       checkout_state: checkoutState || 'initial',
       checkout_plan: checkoutPlan,
-    });
+    }));
     if (checkoutState !== 'success') {
       trackMetaViewContent({
         content_name: 'onboarding_pricing',
@@ -88,6 +125,16 @@ function OnboardingBilling() {
       });
     }
   }, [checkoutPlan, checkoutState]);
+
+  useEffect(() => {
+    return () => {
+      if (progressedRef.current) return;
+      trackEvent('onboarding_billing_dropoff', withRole({
+        step_key: 'billing',
+        question_label: 'Billing / plans',
+      }));
+    };
+  }, []);
 
   useEffect(() => {
     if (!loading && subscription?.is_active && checkoutState !== 'success') {
@@ -106,16 +153,19 @@ function OnboardingBilling() {
   const startCheckout = async (planKey) => {
     try {
       setActionLoading(planKey);
-      trackEvent('onboarding_billing_checkout_started', { plan_key: planKey });
+      trackEvent('onboarding_billing_plan_selected', withRole({ plan_key: planKey }));
+      trackEvent('onboarding_billing_checkout_started', withRole({ plan_key: planKey }));
       trackCheckoutStarted(planKey, 'onboarding');
+      progressedRef.current = true;
       await beginCheckout(planKey, { flow: 'onboarding' });
     } catch (err) {
       console.error(err);
+      progressedRef.current = false;
       setCheckoutNotice('failed');
-      trackEvent('onboarding_billing_checkout_failed', {
+      trackEvent('onboarding_billing_checkout_failed', withRole({
         plan_key: planKey,
         error: err?.message || 'checkout_failed',
-      });
+      }));
       setActionLoading('');
     }
   };
@@ -126,7 +176,6 @@ function OnboardingBilling() {
 
   return (
     <section className="mx-auto flex min-h-screen w-full max-w-[1280px] flex-col px-4 py-8 text-white md:px-6 md:py-12">
-      <div className="rounded-2xl border border-white/10 bg-black/40 p-6 md:p-10">
         {checkoutNotice === 'verifying' ? (
           <CubeLoaderOverlay label="Verifying payment status…" minHeight="12rem" />
         ) : null}
@@ -146,7 +195,7 @@ function OnboardingBilling() {
         <div className="mx-auto mt-6 max-w-3xl text-center md:mt-10">
           <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Pricing</p>
           <h2 className="mt-2 text-2xl font-semibold md:text-3xl">
-            Choose the plan that matches your research depth and team needs.
+            Unlock the ads and content already converting in your niche.
           </h2>
         </div>
 
@@ -195,6 +244,7 @@ function OnboardingBilling() {
                 {isAgency ? (
                   <a
                     href="mailto:sales@viraladlibrary.com?subject=Agency%20Plan%20Inquiry"
+                    onClick={() => trackEvent('onboarding_billing_agency_clicked', withRole({ plan_key: 'agency' }))}
                     className={`mt-8 inline-flex w-full justify-center rounded-sm py-3 text-sm font-bold ${
                       plan.popular ? 'bg-emerald-400 text-black hover:bg-emerald-300' : 'bg-white/10 text-white hover:bg-white/15'
                     }`}
@@ -217,7 +267,6 @@ function OnboardingBilling() {
             );
           })}
         </div>
-      </div>
     </section>
   );
 }

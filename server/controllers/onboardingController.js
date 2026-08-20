@@ -17,6 +17,16 @@ function extractJson(text) {
   }
 }
 
+function toSqlJson(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
+}
+
 async function ensureUser(user) {
   const email = user.email || `${user.id}@clerk.local`;
   const username = user.username || null;
@@ -181,10 +191,13 @@ function buildPreferencesPayload(body = {}, existing = {}) {
   if (Array.isArray(body.countries)) prefs.countries = body.countries;
   if (Array.isArray(incoming.countries)) prefs.countries = incoming.countries;
   if (incoming.country != null) prefs.country = incoming.country;
+  if (incoming.audienceRole != null) prefs.audienceRole = String(incoming.audienceRole || '').trim();
+  if (body.audienceRole != null) prefs.audienceRole = String(body.audienceRole || '').trim();
   if (incoming.scrapeCache != null) prefs.scrapeCache = incoming.scrapeCache;
   if (body.scrapeCache != null) prefs.scrapeCache = body.scrapeCache;
   if (incoming.extracted != null) prefs.extracted = incoming.extracted;
   if (body.extracted != null) prefs.extracted = body.extracted;
+  if (incoming.onboardingFlowVersion != null) prefs.onboardingFlowVersion = Number(incoming.onboardingFlowVersion) || incoming.onboardingFlowVersion;
 
   return prefs;
 }
@@ -232,7 +245,7 @@ async function upsertOnboardingProfile(req, res) {
     const resolvedTargetAudience =
       String(targetAudience || idealCustomers || existing?.target_audience || '').trim() || null;
     const resolvedStep = Number.isFinite(Number(onboardingStep))
-      ? Math.min(4, Math.max(1, Number(onboardingStep)))
+      ? Math.min(5, Math.max(1, Number(onboardingStep)))
       : Number(existing?.onboarding_step) || 1;
     const resolvedCompleted =
       onboardingCompleted === true || onboardingCompleted === 1 || onboardingCompleted === '1'
@@ -274,13 +287,13 @@ async function upsertOnboardingProfile(req, res) {
         industry || existing?.industry || null,
         brandSize || existing?.brand_size || null,
         resolvedTargetAudience,
-        goals ? JSON.stringify(goals) : existing?.goals || null,
-        channels ? JSON.stringify(channels) : existing?.channels || null,
-        Object.keys(mergedPrefs).length ? JSON.stringify(mergedPrefs) : existing?.preferences || null,
+        goals != null ? toSqlJson(goals) : toSqlJson(existing?.goals),
+        channels != null ? toSqlJson(channels) : toSqlJson(existing?.channels),
+        Object.keys(mergedPrefs).length ? toSqlJson(mergedPrefs) : toSqlJson(existing?.preferences),
         story !== undefined ? story || null : existing?.story || null,
-        tone ? JSON.stringify(tone) : existing?.tone || null,
-        valueProps ? JSON.stringify(valueProps) : existing?.value_props || null,
-        contentPillars ? JSON.stringify(contentPillars) : existing?.content_pillars || null,
+        tone != null ? toSqlJson(tone) : toSqlJson(existing?.tone),
+        valueProps != null ? toSqlJson(valueProps) : toSqlJson(existing?.value_props),
+        contentPillars != null ? toSqlJson(contentPillars) : toSqlJson(existing?.content_pillars),
         resolvedStep,
         resolvedCompleted,
       ]
@@ -429,6 +442,7 @@ async function getOnboardingStatus(req, res) {
       hasProfile: Boolean(hasBasicProfile),
       hasInsights: Boolean(hasInsights),
       niche: prefs.niche || '',
+      audienceRole: prefs.audienceRole || '',
       countries: Array.isArray(prefs.countries) ? prefs.countries : [],
     };
 

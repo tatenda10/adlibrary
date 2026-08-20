@@ -2,6 +2,7 @@ const ONBOARDING_FUNNEL_STEPS = [
   { name: 'Landing viewed', event: 'landing_viewed' },
   { name: 'Signed in', event: 'user_signed_in' },
   { name: 'Onboarding started', event: 'onboarding_started' },
+  { name: 'Your role', event: 'onboarding_q_role_answered' },
   { name: 'Website URL', event: 'onboarding_q_website_viewed' },
   { name: 'Brand name', event: 'onboarding_q_brand_name_answered' },
   { name: 'Industry', event: 'onboarding_q_industry_answered' },
@@ -11,9 +12,15 @@ const ONBOARDING_FUNNEL_STEPS = [
   { name: 'Brand story', event: 'onboarding_q_story_answered' },
   { name: 'Ideal customer', event: 'onboarding_q_ideal_customer_answered' },
   { name: 'Onboarding completed', event: 'onboarding_completed' },
+];
+
+const BILLING_FUNNEL_STEPS = [
   { name: 'Unlock viewed', event: 'onboarding_unlock_viewed' },
+  { name: 'Unlock clicked', event: 'onboarding_unlock_clicked' },
   { name: 'Billing viewed', event: 'onboarding_billing_viewed' },
+  { name: 'Plan selected', event: 'onboarding_billing_plan_selected' },
   { name: 'Checkout started', event: 'onboarding_billing_checkout_started' },
+  { name: 'Paid successfully', event: 'onboarding_billing_payment_success' },
 ];
 
 function getPropertyId() {
@@ -230,6 +237,7 @@ async function runGa4FunnelReport({ days = 30, openFunnel = false } = {}) {
 
 module.exports = {
   ONBOARDING_FUNNEL_STEPS,
+  BILLING_FUNNEL_STEPS,
   hasGa4Credentials,
   runGa4EventReport,
   runGa4FunnelReport,

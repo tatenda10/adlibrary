@@ -1,12 +1,40 @@
 import { getUserFacingError } from './userFacingError.js';
 
-export const API_URL = (
-   import.meta.env.VITE_API_URL ||
- import.meta.env.VITE_API_BASE_URL ||
- 'http://localhost:5000'
-).replace(/\/+$/, '');
+// export const API_URL = (
+//    import.meta.env.VITE_API_URL ||
+//  import.meta.env.VITE_API_BASE_URL ||
+//  'http://localhost:5000'
+// ).replace(/\/+$/, '');
 
-//export const API_URL = 'https://viraladlibrary.space';
+export const API_URL = 'https://viraladlibrary.space';
+
+let onAuthExpired = null;
+let authExpiredInFlight = false;
+
+export function setAuthExpiredHandler(handler) {
+  onAuthExpired = typeof handler === 'function' ? handler : null;
+}
+
+function isExpiredAuthError(status, data, headers) {
+  if (Number(status) !== 401) return false;
+  const raw = String(data?.error || data?.message || '').toLowerCase();
+  if (!raw.includes('invalid or expired token')) return false;
+  const authHeader = String(headers?.Authorization || headers?.authorization || '');
+  return /^bearer\s+\S+/i.test(authHeader);
+}
+
+function triggerAuthExpired() {
+  if (authExpiredInFlight || !onAuthExpired) return;
+  authExpiredInFlight = true;
+  Promise.resolve()
+    .then(() => onAuthExpired())
+    .catch(() => {})
+    .finally(() => {
+      window.setTimeout(() => {
+        authExpiredInFlight = false;
+      }, 1500);
+    });
+}
 
 function isApifyArtifactUrl(value) {
   const raw = String(value || '').toLowerCase();
@@ -73,6 +101,9 @@ async function request(path, options = {}) {
   }
 
   if (!response.ok) {
+    if (isExpiredAuthError(response.status, data, options.headers)) {
+      triggerAuthExpired();
+    }
     const rawMessage = data?.error || data?.message || `Request failed with status ${response.status}`;
     const message = getUserFacingError(
       { message: rawMessage, upgrade_prompt: data?.upgrade_prompt },
