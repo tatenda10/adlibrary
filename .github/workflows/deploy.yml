@@ -33,12 +33,6 @@ jobs:
         with:
           node-version: 20
 
-      - name: Build client artifact
-        working-directory: client
-        run: |
-          npm ci
-          npm run build
-
       - name: Build admin artifact
         working-directory: admin
         run: |
@@ -48,8 +42,7 @@ jobs:
       - name: Package release artifacts
         shell: bash
         run: |
-          mkdir -p release/client release/admin release/server
-          cp -R client/dist/. release/client/
+          mkdir -p release/admin release/server
           cp -R admin/dist/. release/admin/
           cp server/package.json server/package-lock.json server/index.js release/server/
           tar -czf viraladlibrary-${GITHUB_SHA}.tar.gz release
@@ -82,7 +75,7 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_APP_PATH: ${{ secrets.VPS_APP_PATH }}
         run: |
-          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd '$VPS_APP_PATH' && git fetch origin main && git reset --hard origin/main && npm ci --prefix server && npm ci --prefix client && npm ci --prefix admin && npm run build --prefix client && npm run build --prefix admin && pm2 restart viraladlibrary --update-env && pm2 save"
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd '$VPS_APP_PATH' && git fetch origin main && git reset --hard origin/main && npm ci --prefix server && npm ci --prefix admin && npm run build --prefix admin && rm -rf /var/www/viraladlibrary-admin/* && cp -R admin/dist/. /var/www/viraladlibrary-admin/ && pm2 restart viraladlibrary --update-env && pm2 save"
 
       - name: Verify deployment health
         env:
