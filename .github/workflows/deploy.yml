@@ -82,7 +82,7 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_APP_PATH: ${{ secrets.VPS_APP_PATH }}
         run: |
-          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd '$VPS_APP_PATH' && git fetch origin main && git reset --hard origin/main && npm ci --prefix server && npm ci --prefix client && npm ci --prefix admin && npm run build --prefix client && npm run build --prefix admin && pm2 restart viraladlibrary-server --update-env"
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "cd '$VPS_APP_PATH' && git fetch origin main && git reset --hard origin/main && npm ci --prefix server && npm ci --prefix client && npm ci --prefix admin && npm run build --prefix client && npm run build --prefix admin && pm2 restart viraladlibrary --update-env && pm2 save"
 
       - name: Verify deployment health
         if: ${{ secrets.PRODUCTION_HEALTHCHECK_URL != '' }}
