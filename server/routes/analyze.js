@@ -1,10 +1,11 @@
 const express = require('express');
 const clerkAuth = require('../middleware/clerkAuth');
-const { hydrateSubscription, requireProSubscription } = require('../middleware/requireSubscription');
+const { hydrateSubscription, requireFeature } = require('../middleware/requireSubscription');
 const { createUsageGuard } = require('../middleware/usageGuard');
 const { analyzeTikTok } = require('../controllers/analyzeController');
 const { enqueueJob } = require('../utils/asyncJobs');
 const { METRICS } = require('../utils/usage');
+const { FEATURES } = require('../utils/entitlements');
 
 const router = express.Router();
 
@@ -16,7 +17,7 @@ router.post('/', clerkAuth, hydrateSubscription, createUsageGuard(METRICS.AI_ANA
   next();
 }, analyzeTikTok);
 
-router.post('/jobs', clerkAuth, hydrateSubscription, requireProSubscription, createUsageGuard(METRICS.AI_ANALYSIS, {
+router.post('/jobs', clerkAuth, hydrateSubscription, requireFeature(FEATURES.AI_ANALYSIS), createUsageGuard(METRICS.AI_ANALYSIS, {
   message: 'You have reached your monthly AI analysis limit.',
   upgradePrompt: 'Upgrade your plan or wait for the next billing cycle to queue more video analyses.',
 }), async (req, res) => {

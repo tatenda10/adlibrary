@@ -191,6 +191,45 @@ CREATE TABLE IF NOT EXISTS user_usage_counters (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS credit_accounts (
+  user_id VARCHAR(255) PRIMARY KEY,
+  cycle_key VARCHAR(32) NOT NULL,
+  balance INT NOT NULL DEFAULT 0,
+  monthly_allowance INT NOT NULL DEFAULT 0,
+  lifetime_purchased INT NOT NULL DEFAULT 0,
+  lifetime_spent INT NOT NULL DEFAULT 0,
+  last_refilled_at DATETIME DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS credit_action_costs (
+  action_key VARCHAR(64) PRIMARY KEY,
+  label VARCHAR(128) NOT NULL,
+  credit_cost INT NOT NULL DEFAULT 1,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  metadata JSON DEFAULT NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS credit_transactions (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id VARCHAR(255) NOT NULL,
+  action_key VARCHAR(64) DEFAULT NULL,
+  transaction_type VARCHAR(32) NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'completed',
+  amount INT NOT NULL,
+  balance_after INT DEFAULT NULL,
+  related_transaction_id BIGINT DEFAULT NULL,
+  description VARCHAR(255) DEFAULT NULL,
+  metadata JSON DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_credit_transactions_user_created (user_id, created_at),
+  INDEX idx_credit_transactions_related (related_transaction_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS saved_collections (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id VARCHAR(255) NOT NULL,
@@ -211,6 +250,30 @@ CREATE TABLE IF NOT EXISTS saved_collections (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS content_library_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id VARCHAR(255) NOT NULL,
+  source VARCHAR(64) NOT NULL DEFAULT 'manual',
+  platform VARCHAR(64) NOT NULL DEFAULT 'facebook',
+  brand_name VARCHAR(255) DEFAULT NULL,
+  title VARCHAR(255) NOT NULL,
+  category VARCHAR(128) DEFAULT NULL,
+  format VARCHAR(64) DEFAULT NULL,
+  angle VARCHAR(128) DEFAULT NULL,
+  notes TEXT DEFAULT NULL,
+  image_url TEXT DEFAULT NULL,
+  source_url TEXT DEFAULT NULL,
+  source_asset_url TEXT DEFAULT NULL,
+  tags_json JSON DEFAULT NULL,
+  meta_json JSON DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_content_library_user (user_id),
+  INDEX idx_content_library_platform (platform),
+  UNIQUE KEY uniq_content_library_user_asset (user_id, source_asset_url(191)),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS async_jobs (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id VARCHAR(255) NOT NULL,
@@ -228,4 +291,47 @@ CREATE TABLE IF NOT EXISTS async_jobs (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_async_jobs_status_available (status, available_at),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS plans (
+  plan_key VARCHAR(64) PRIMARY KEY,
+  name VARCHAR(128) NOT NULL,
+  monthly_price_cents INT NULL,
+  dodo_product_id VARCHAR(255) NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  is_self_serve TINYINT(1) NOT NULL DEFAULT 0,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  metadata JSON NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS features (
+  feature_key VARCHAR(64) PRIMARY KEY,
+  label VARCHAR(128) NOT NULL,
+  description VARCHAR(512) NULL,
+  category VARCHAR(64) NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS plan_features (
+  plan_key VARCHAR(64) NOT NULL,
+  feature_key VARCHAR(64) NOT NULL,
+  enabled TINYINT(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (plan_key, feature_key),
+  FOREIGN KEY (plan_key) REFERENCES plans(plan_key) ON DELETE CASCADE,
+  FOREIGN KEY (feature_key) REFERENCES features(feature_key) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS plan_limits (
+  plan_key VARCHAR(64) NOT NULL,
+  metric_key VARCHAR(64) NOT NULL,
+  limit_value INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (plan_key, metric_key),
+  FOREIGN KEY (plan_key) REFERENCES plans(plan_key) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS entitlement_catalog_meta (
+  id TINYINT PRIMARY KEY DEFAULT 1,
+  version INT NOT NULL DEFAULT 1,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

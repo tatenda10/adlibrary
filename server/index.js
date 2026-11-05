@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 
 const searchRoutes = require('./routes/search');
 const tiktokRoutes = require('./routes/tiktok');
@@ -11,6 +12,7 @@ const dashboardRoutes = require('./routes/dashboard');
 const hooksRoutes = require('./routes/hooks');
 const billingRoutes = require('./routes/billing');
 const collectionsRoutes = require('./routes/collections');
+const contentLibraryRoutes = require('./routes/contentLibrary');
 const facebookRoutes = require('./routes/facebook');
 const instagramRoutes = require('./routes/instagram');
 const croAuditRoutes = require('./routes/croAudit');
@@ -67,6 +69,7 @@ app.use(
 );
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), handleBillingWebhook);
 app.use(express.json({ limit: '2mb' }));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.get('/health', async (req, res) => {
   try {
@@ -86,6 +89,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/hooks', hooksRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/collections', collectionsRoutes);
+app.use('/api/content-library', contentLibraryRoutes);
 app.use('/api/facebook', facebookRoutes);
 app.use('/api/instagram', instagramRoutes);
 app.use('/api/cro-audit', croAuditRoutes);

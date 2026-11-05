@@ -18,6 +18,7 @@ export function getBillingLimitTitle(err) {
   if (code === 'subscription_required') return 'Subscription required';
   if (code === 'pro_required') return 'Pro plan required';
   if (code === 'collection_limit_reached') return 'Collection limit reached';
+  if (code === 'insufficient_credits') return 'Not enough credits';
   if (code === 'quota_exceeded') return 'Monthly limit reached';
   return 'Plan limit reached';
 }
@@ -29,6 +30,12 @@ export function getBillingLimitMessage(err) {
 
   if (code === 'quota_exceeded' && raw) {
     return raw;
+  }
+  if (code === 'insufficient_credits') {
+    const required = Number(err?.required_credits || 0);
+    const balance = Number(err?.credit_balance || err?.credits?.balance || 0);
+    if (required > 0) return `This action needs ${required} credits. You have ${balance} credits remaining.`;
+    return raw || 'You do not have enough credits for this action.';
   }
   if (raw) return raw;
   if (prompt) return prompt;

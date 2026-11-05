@@ -19,8 +19,10 @@ function SubscriptionExpired() {
   const navigate = useNavigate();
   const { signOut } = useClerk();
   const { beginCheckout, refreshBilling, loading, subscription } = useBilling();
-  const { notifyApiError, showWarning } = useApiToast();
+  const { notifyApiError, showWarning, showSuccess } = useApiToast();
   const [actionLoading, setActionLoading] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [statusModalOpen, setStatusModalOpen] = useState(true);
 
   useEffect(() => {
     if (!loading && subscription?.is_active) {
@@ -55,6 +57,32 @@ function SubscriptionExpired() {
     }
   };
 
+  const handleRefreshStatus = async () => {
+    try {
+      setRefreshing(true);
+      const subscriptionId =
+        new URLSearchParams(window.location.search).get('subscription_id') || undefined;
+      let data = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        data = await refreshBilling({ silent: true, subscriptionId });
+        if (data?.subscription?.is_active) break;
+        if (attempt < 2) {
+          await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+        }
+      }
+      if (data?.subscription?.is_active) {
+        showSuccess('Payment found — restoring access.');
+        navigate('/app', { replace: true });
+        return;
+      }
+      showWarning('No active subscription yet. If you just paid, wait a moment and try again.');
+    } catch (err) {
+      notifyApiError(err, 'Could not refresh billing status.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const handleSignOut = async () => {
     try {
       localStorage.removeItem('pending_checkout_plan');
@@ -74,7 +102,14 @@ function SubscriptionExpired() {
 
   return (
     <section className="mx-auto flex min-h-screen w-full max-w-[1280px] flex-col bg-[#030303] px-4 py-8 text-white md:px-6 md:py-12">
-      <div className="mb-3 flex justify-end">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => setStatusModalOpen(true)}
+          className="rounded-md border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-500/15"
+        >
+          Why is access paused?
+        </button>
         <button
           type="button"
           onClick={handleSignOut}
@@ -84,37 +119,15 @@ function SubscriptionExpired() {
         </button>
       </div>
 
-      <div className="rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-6 md:p-8">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-amber-300">Subscription ended</p>
-        <h1 className="mt-2 text-2xl font-semibold md:text-3xl">Your workspace access is paused</h1>
-        <p className="mt-3 max-w-2xl text-sm text-slate-300 md:text-base">
-          {lastPlan !== 'Your plan' ? (
-            <>
-              Your previous plan was <span className="font-semibold text-white">{lastPlan}</span>. It is no longer active, so you do not need to complete onboarding again. Choose a plan below to restore access.
-            </>
-          ) : (
-            <>Your subscription is no longer active. Renew below to restore access without going through onboarding again.</>
-          )}
-        </p>
-        <button
-          type="button"
-          onClick={() => refreshBilling()}
-          className="mt-4 text-xs font-semibold text-emerald-300 underline-offset-2 hover:underline"
-        >
-          I already paid — refresh status
-        </button>
-      </div>
-
-      <div className="mx-auto mt-8 max-w-3xl text-center">
+      <div className="mx-auto max-w-3xl text-center">
         <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Renew</p>
-        <h2 className="mt-2 text-xl font-semibold md:text-2xl">Choose a plan to continue</h2>
+        <h1 className="mt-2 text-xl font-semibold md:text-2xl">Choose a plan to continue</h1>
         <p className="mt-2 text-sm text-slate-400">Starter and Pro are self-serve. Agency is available through sales.</p>
       </div>
 
       <div className="mt-10 grid gap-6 md:grid-cols-3">
         {PRICING_PLANS.map((plan) => {
           const isAgency = plan.key === 'agency';
-          const isCurrent = subscription?.current_plan === plan.key && subscription?.is_active;
           const isBusy = actionLoading === plan.key;
 
           return (
@@ -159,18 +172,76 @@ function SubscriptionExpired() {
                 <button
                   type="button"
                   onClick={() => startCheckout(plan.key)}
-                  disabled={isCurrent || isBusy}
+                  disabled={isBusy}
                   className={`mt-8 w-full rounded-sm py-3 text-sm font-bold disabled:opacity-60 ${
                     plan.popular ? 'bg-emerald-400 text-black hover:bg-emerald-300' : 'bg-white/10 text-white hover:bg-white/15'
                   }`}
                 >
-                  {isBusy ? 'Redirecting...' : isCurrent ? 'Current plan' : plan.cta}
+                  {isBusy ? 'Redirecting...' : plan.cta}
                 </button>
               )}
             </div>
           );
         })}
       </div>
+
+      {statusModalOpen ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="subscription-status-title"
+          onClick={() => setStatusModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg overflow-hidden rounded-2xl border border-white/10 shadow-2xl"
+            style={{ background: '#0a0a0a' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-white/10 bg-gradient-to-br from-amber-500/12 via-transparent to-emerald-500/10 px-6 py-5">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-amber-300">Subscription ended</p>
+              <h2 id="subscription-status-title" className="mt-2 text-xl font-semibold text-white">
+                Your workspace access is paused
+              </h2>
+              <p className="mt-3 text-sm leading-relaxed text-slate-300">
+                {lastPlan !== 'Your plan' ? (
+                  <>
+                    Your previous plan was <span className="font-semibold text-white">{lastPlan}</span>. Choose a plan
+                    below to restore access — no need to redo onboarding.
+                  </>
+                ) : (
+                  <>Your subscription is no longer active. Renew below to restore access.</>
+                )}
+              </p>
+            </div>
+
+            <div className="space-y-3 px-6 py-5">
+              <button
+                type="button"
+                onClick={handleRefreshStatus}
+                disabled={refreshing}
+                className="w-full rounded-sm border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-300 hover:bg-emerald-400/15 disabled:opacity-60"
+              >
+                {refreshing ? 'Checking payment…' : 'I already paid — refresh status'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusModalOpen(false)}
+                className="w-full rounded-sm bg-emerald-400 px-4 py-3 text-sm font-bold text-black hover:bg-emerald-300"
+              >
+                Choose a plan
+              </button>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="w-full rounded-sm border border-white/15 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-white/5"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

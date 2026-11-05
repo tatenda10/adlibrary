@@ -1,6 +1,7 @@
 const express = require('express');
 const clerkAuth = require('../middleware/clerkAuth');
-const { hydrateSubscription, requirePaidSubscription, requireProSubscription } = require('../middleware/requireSubscription');
+const { hydrateSubscription, requirePaidSubscription, requireFeature } = require('../middleware/requireSubscription');
+const { FEATURES } = require('../utils/entitlements');
 const { searchInstagram, intelligentSearchInstagram, proxyInstagramMedia } = require('../controllers/instagramController');
 const { getTrends, refreshTrends } = require('../controllers/instagramTrendsController');
 const instagramWorkspace = require('../controllers/instagramWorkspaceController');
@@ -19,7 +20,7 @@ const {
 } = instagramWorkspace;
 
 router.post('/search', clerkAuth, hydrateSubscription, requirePaidSubscription, searchInstagram);
-router.post('/intelligent', clerkAuth, hydrateSubscription, requirePaidSubscription, requireProSubscription, intelligentSearchInstagram);
+router.post('/intelligent', clerkAuth, hydrateSubscription, requireFeature(FEATURES.INTELLIGENT_SEARCH), intelligentSearchInstagram);
 
 router.get('/trends', clerkAuth, hydrateSubscription, requirePaidSubscription, getTrends);
 router.post('/trends/refresh', clerkAuth, hydrateSubscription, requirePaidSubscription, refreshTrends);

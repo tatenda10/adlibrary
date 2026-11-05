@@ -3,10 +3,10 @@ import { NavLink } from 'react-router-dom';
 const tabs = [
   { label: 'Trending', to: '/tiktok/trending', icon: TrendIcon },
   { label: 'Trending Music', to: '/tiktok/trending-music', icon: MusicIcon },
-  { label: 'Creators', to: '/tiktok/creators', icon: SparkIcon },
+  // { label: 'Creators', to: '/tiktok/creators', icon: SparkIcon },
   // { label: 'Trending Hashtags', to: '/tiktok/trending-hashtags', icon: TrendIcon },
   { label: 'Hot Takes', to: '/tiktok/hot-takes', icon: TrendIcon },
-  { label: 'Predictor', to: '/tiktok/predictor', icon: SignalIcon },
+  // { label: 'Predictor', to: '/tiktok/predictor', icon: SignalIcon },
   { label: 'Workspace', to: '/tiktok/workspace', icon: BriefcaseIcon },
   // { label: 'Saved', to: '/tiktok/saved', icon: BookmarkMiniIcon },
   // { label: 'For You', to: '/tiktok/for-you', icon: SparkIcon },

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { adminGetOnboardingProfileDetail, adminGetOnboardingProfiles } from '../lib/api.js';
+import { Link } from 'react-router-dom';
+import { adminGetOnboardingProfiles } from '../lib/api.js';
 import { useAdminAuth } from '../context/AdminAuthContext.jsx';
-import { AdminButton, AdminCard, AdminPageHeader } from '../components/ui/AdminUi.jsx';
+import { AdminCard, AdminPageHeader } from '../components/ui/AdminUi.jsx';
 
 export function OnboardingPage() {
   const { token } = useAdminAuth();
@@ -9,9 +10,6 @@ export function OnboardingPage() {
   const [data, setData] = useState({ profiles: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedUserId, setSelectedUserId] = useState(null);
-  const [selectedProfile, setSelectedProfile] = useState(null);
-  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,31 +34,6 @@ export function OnboardingPage() {
       window.clearTimeout(timer);
     };
   }, [token, search]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadDetail() {
-      if (!token || !selectedUserId) {
-        setSelectedProfile(null);
-        return;
-      }
-      try {
-        setDetailLoading(true);
-        const row = await adminGetOnboardingProfileDetail(token, selectedUserId);
-        if (!cancelled) setSelectedProfile(row?.profile || null);
-      } catch (err) {
-        if (!cancelled) setError(err.message || 'Failed to load profile detail');
-      } finally {
-        if (!cancelled) setDetailLoading(false);
-      }
-    }
-
-    loadDetail();
-    return () => {
-      cancelled = true;
-    };
-  }, [token, selectedUserId]);
 
   return (
     <section className="mx-auto max-w-6xl space-y-6">
@@ -124,9 +97,12 @@ export function OnboardingPage() {
                   {formatDate(profile.updated_at)}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <AdminButton variant="ghost" onClick={() => setSelectedUserId(profile.user_id)}>
+                  <Link
+                    to={`/onboarding/${encodeURIComponent(profile.user_id)}`}
+                    className="inline-flex rounded-sm border border-white/10 px-3 py-1.5 text-xs font-semibold text-[#d1d5db] hover:bg-white/5"
+                  >
                     View
-                  </AdminButton>
+                  </Link>
                 </td>
               </tr>
             ))}
@@ -135,145 +111,8 @@ export function OnboardingPage() {
       </AdminCard>
 
       <p className="text-xs text-[#6b7280]">{data.total} onboarding profile{data.total === 1 ? '' : 's'}</p>
-
-      <OnboardingDetailModal
-        profile={selectedProfile}
-        loading={detailLoading}
-        onClose={() => {
-          setSelectedUserId(null);
-          setSelectedProfile(null);
-        }}
-      />
     </section>
   );
-}
-
-function OnboardingDetailModal({ profile, loading, onClose }) {
-  if (!profile && !loading) return null;
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <button type="button" className="absolute inset-0 bg-black/75" aria-label="Close" onClick={onClose} />
-      <div className="relative z-10 flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-sm border border-white/10 bg-[#0a0a0a] shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Onboarding profile</p>
-            <h2 className="mt-1 text-lg font-semibold text-white">
-              {loading ? 'Loading…' : profile?.brand_name || profile?.email || 'Profile'}
-            </h2>
-            {profile?.email ? <p className="mt-1 text-sm text-[#9ca3af]">{profile.email}</p> : null}
-          </div>
-          <AdminButton variant="ghost" onClick={onClose}>
-            Close
-          </AdminButton>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          {loading ? <p className="text-sm text-[#9ca3af]">Loading profile…</p> : null}
-          {profile ? <OnboardingDetailBody profile={profile} /> : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function OnboardingDetailBody({ profile }) {
-  const sections = [
-    {
-      title: 'Basics',
-      fields: [
-        ['Brand name', profile.brand_name],
-        ['Industry', profile.industry],
-        ['Niche', profile.niche],
-        ['Market / country', profile.country],
-        ['Countries', formatList(profile.countries)],
-        ['Website', profile.website_url],
-        ['Brand size', profile.brand_size],
-      ],
-    },
-    {
-      title: 'Audience & story',
-      fields: [
-        ['Ideal customer', profile.target_audience || profile.preferences?.idealCustomers],
-        ['Brand story', profile.story],
-      ],
-    },
-    {
-      title: 'Channels & goals',
-      fields: [
-        ['Suggested channels', profile.suggested_channels_text || formatList(profile.channels)],
-        ['Goals', formatJson(profile.goals)],
-      ],
-    },
-    {
-      title: 'AI-generated insights',
-      fields: [
-        ['Tone', formatJson(profile.tone)],
-        ['Value props', formatJson(profile.value_props)],
-        ['Content pillars', formatJson(profile.content_pillars)],
-        ['Last scraped', formatDate(profile.last_scraped_at)],
-      ],
-    },
-    {
-      title: 'Meta',
-      fields: [
-        ['User ID', profile.user_id],
-        ['Created', formatDate(profile.created_at)],
-        ['Updated', formatDate(profile.updated_at)],
-      ],
-    },
-  ];
-
-  return (
-    <div className="space-y-6">
-      {sections.map((section) => (
-        <div key={section.title}>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">{section.title}</p>
-          <dl className="mt-3 grid gap-3 sm:grid-cols-2">
-            {section.fields.map(([label, value]) => (
-              <Field key={label} label={label} value={value} wide={label.includes('story') || label.includes('customer')} />
-            ))}
-          </dl>
-        </div>
-      ))}
-
-      {profile.preferences ? (
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-[#7f8ba0]">Raw preferences JSON</p>
-          <pre className="mt-2 overflow-auto rounded-sm border border-white/8 bg-black/40 p-4 text-[11px] leading-5 text-[#c6d0db]">
-            {JSON.stringify(profile.preferences, null, 2)}
-          </pre>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function Field({ label, value, wide = false }) {
-  const display = value === null || value === undefined || value === '' ? '—' : String(value);
-  return (
-    <div className={`rounded-sm border border-white/8 bg-black/20 px-3 py-2.5 ${wide ? 'sm:col-span-2' : ''}`}>
-      <dt className="text-[10px] uppercase tracking-[0.12em] text-[#6b7280]">{label}</dt>
-      <dd className="mt-1 whitespace-pre-wrap break-words text-sm text-[#e5e7eb]">{display}</dd>
-    </div>
-  );
-}
-
-function formatList(value) {
-  if (!value) return '';
-  if (Array.isArray(value)) return value.filter(Boolean).join(', ');
-  return String(value);
-}
-
-function formatJson(value) {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (Array.isArray(value)) return value.filter(Boolean).join(' · ');
-  if (typeof value === 'object') {
-    if (value.summary) return String(value.summary);
-    return JSON.stringify(value, null, 2);
-  }
-  return String(value);
 }
 
 function formatDate(value) {

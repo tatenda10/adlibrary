@@ -11,7 +11,6 @@ import { trackEvent } from '../lib/firebaseAnalytics.js';
 import { trackMetaCompleteRegistration, trackMetaViewContent } from '../lib/metaPixel.js';
 import { CubeLoader, CubeLoaderOverlay } from '../components/CubeLoader.jsx';
 import { useApiToast } from '../hooks/useApiToast.js';
-import { preloadUnlockShowcase } from '../lib/unlockShowcase.js';
 
 const POPULAR_COUNTRIES = [
   'United States',
@@ -64,15 +63,22 @@ function countryMatchesName(name, query) {
   return false;
 }
 
-const TOTAL_STEPS = 5;
-const ONBOARDING_FLOW_VERSION = 5;
+const TOTAL_STEPS = 11;
+const ONBOARDING_FLOW_VERSION = 7;
+const BRAND_FLOW_STEP_OFFSET = 6;
 
 const ONBOARDING_SCREENS = {
   1: { key: 'role', label: 'Your role', viewedEvent: 'onboarding_q_role_viewed' },
-  2: { key: 'website', label: 'Website URL', viewedEvent: 'onboarding_q_website_viewed' },
-  3: { key: 'brand', label: 'Brand details', viewedEvent: 'onboarding_q_brand_viewed' },
-  4: { key: 'markets', label: 'Markets & channels', viewedEvent: 'onboarding_q_markets_viewed' },
-  5: { key: 'voice', label: 'Brand voice', viewedEvent: 'onboarding_q_voice_viewed' },
+  2: { key: 'team_size', label: 'Team size', viewedEvent: 'onboarding_q_team_size_viewed' },
+  3: { key: 'monthly_revenue', label: 'Monthly revenue', viewedEvent: 'onboarding_q_monthly_revenue_viewed' },
+  4: { key: 'business_model', label: 'Business model', viewedEvent: 'onboarding_q_business_model_viewed' },
+  5: { key: 'marketing_timeline', label: 'Marketing timeline', viewedEvent: 'onboarding_q_marketing_timeline_viewed' },
+  6: { key: 'platform_expectations', label: 'Platform expectations', viewedEvent: 'onboarding_q_platform_expectations_viewed' },
+  7: { key: 'referral_sources', label: 'Referral sources', viewedEvent: 'onboarding_q_referral_sources_viewed' },
+  8: { key: 'website', label: 'Website URL', viewedEvent: 'onboarding_q_website_viewed' },
+  9: { key: 'brand', label: 'Brand details', viewedEvent: 'onboarding_q_brand_viewed' },
+  10: { key: 'markets', label: 'Markets & channels', viewedEvent: 'onboarding_q_markets_viewed' },
+  11: { key: 'voice', label: 'Brand voice', viewedEvent: 'onboarding_q_voice_viewed' },
 };
 
 const ONBOARDING_QUESTIONS = [
@@ -195,12 +201,89 @@ function RoleIcon({ name }) {
   );
 }
 
+function ChoiceSection({
+  title,
+  options,
+  value,
+  onSelect,
+  multiple = false,
+  columns = 'sm:grid-cols-3',
+}) {
+  const selectedValues = multiple && Array.isArray(value) ? value : [];
+
+  return (
+    <div>
+      <label className="block text-sm font-semibold text-slate-200">{title}</label>
+      <div className={`mt-3 grid gap-3 ${columns}`}>
+        {options.map((option) => {
+          const selected = multiple ? selectedValues.includes(option) : value === option;
+          return (
+            <button
+              key={option}
+              type="button"
+              onClick={() => onSelect(option)}
+              className={`min-h-[54px] rounded-2xl border px-4 py-3 text-center text-sm font-semibold transition ${
+                selected
+                  ? 'border-slate-700 bg-slate-800 text-white shadow-[inset_0_0_18px_rgba(15,23,42,0.45)]'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-300 hover:text-slate-950'
+              }`}
+            >
+              {option}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const ROLE_OPTIONS = [
-  { key: 'media_buyer', label: 'Solo media buyer', detail: 'I test ads and content myself', icon: 'megaphone' },
-  { key: 'in_house', label: 'In-house growth', detail: 'I research for a brand team', icon: 'briefcase' },
   { key: 'founder', label: 'Founder', detail: 'I run the brand, content, and ads', icon: 'rocket' },
-  { key: 'agency', label: 'Agency / operator', detail: 'I research for multiple clients', icon: 'building' },
+  { key: 'social_media_manager', label: 'Social Media Manager', detail: 'I plan and publish social content', icon: 'megaphone', flow: 'in_house' },
+  { key: 'marketing_manager', label: 'Marketing Manager', detail: 'I manage campaigns and growth', icon: 'briefcase', flow: 'in_house' },
+  { key: 'agency', label: 'Agency Owner', detail: 'I research for multiple clients', icon: 'building' },
+  { key: 'freelancer', label: 'Freelancer', detail: 'I create content and strategy for clients', icon: 'megaphone', flow: 'agency' },
+  { key: 'product_manager', label: 'Product Manager', detail: 'I research messaging and competitors', icon: 'briefcase', flow: 'in_house' },
+  { key: 'content_creator', label: 'Content Creator', detail: 'I create content for my audience', icon: 'megaphone', flow: 'founder' },
+  { key: 'growth_manager', label: 'Growth Manager', detail: 'I test channels, ads, and content', icon: 'briefcase', flow: 'in_house' },
+  { key: 'other', label: 'Other', detail: 'I use the platform another way', icon: 'building', flow: 'founder' },
 ];
+
+const TEAM_SIZE_OPTIONS = ['Just me', '2 - 5', '6 - 10', '11 - 20', '21 - 50', '50+'];
+const MONTHLY_REVENUE_OPTIONS = ['Pre-revenue', '$1 - $1,000', '$1,000 - $10k', '$10k - $50k', '$50k - $500k', '$500k+'];
+const BUSINESS_MODEL_OPTIONS = ['B2B', 'B2C', 'Both'];
+const BUSINESS_CATEGORY_OPTIONS = ['E-commerce', 'SaaS', 'Agency', 'Services', 'Marketplace', 'Media/Content', 'Mobile app', 'Other'];
+const MARKETING_TIMELINE_OPTIONS = ['I need marketing now', 'I need marketing in the future', 'Just curious'];
+const PLATFORM_EXPECTATION_OPTIONS = [
+  'To save time on content creation',
+  'To get more views on social media',
+  'To drive traffic to my site',
+  'To generate revenue',
+  'To learn and become better at content marketing',
+  'Other',
+];
+const REFERRAL_SOURCE_OPTIONS = [
+  'X (Twitter)',
+  'LinkedIn',
+  'YouTube',
+  'TikTok',
+  'Instagram',
+  'Facebook',
+  'Podcast',
+  'Newsletter',
+  'Google',
+  'Reddit',
+  'ChatGPT',
+  'Claude',
+  'Gemini',
+  'Friend/Referral',
+  'Other',
+];
+
+function resolveRoleFlowKey(roleKey) {
+  const option = ROLE_OPTIONS.find((role) => role.key === roleKey);
+  return option?.flow || roleKey;
+}
 
 const ROLE_FLOWS = {
   founder: {
@@ -391,6 +474,33 @@ const ROLE_PICKER_COPY = {
   subtitle: 'Choose how you work. The next questions change so we research both organic content and paid ads for the right brand.',
 };
 
+const SETUP_STEP_COPY = {
+  2: {
+    title: 'How big is your current team?',
+    subtitle: 'This helps us tailor the calendar, research depth, and workflows to your resources.',
+  },
+  3: {
+    title: 'What is your current monthly revenue?',
+    subtitle: 'We use this to match your content strategy to the stage of the business.',
+  },
+  4: {
+    title: 'What kind of business is this?',
+    subtitle: 'Tell us the business model and category so examples and angles stay relevant.',
+  },
+  5: {
+    title: 'When do you need marketing help?',
+    subtitle: 'This changes whether we prioritize immediate content output or longer-term learning.',
+  },
+  6: {
+    title: 'What do you expect from the platform?',
+    subtitle: 'Select the outcomes you care about most so we can personalize the experience.',
+  },
+  7: {
+    title: 'How did you hear about us?',
+    subtitle: 'This helps us understand where new users are finding ViralAdLibrary.',
+  },
+};
+
 function defaultChannelsForIndustry(industry) {
   const key = String(industry || '').toLowerCase();
   if (key === 'saas' || key.includes('b2b')) return ['Google Search Ads', 'LinkedIn Ads'];
@@ -430,6 +540,13 @@ function profileToForm(row) {
     industryOther: INDUSTRY_OPTIONS.includes(row?.industry) ? '' : row?.industry || '',
     niche: prefs.niche || '',
     audienceRole: prefs.audienceRole || '',
+    teamSize: prefs.teamSize || '',
+    monthlyRevenue: prefs.monthlyRevenue || '',
+    businessModel: prefs.businessModel || '',
+    businessCategories: Array.isArray(prefs.businessCategories) ? prefs.businessCategories : [],
+    marketingTimeline: prefs.marketingTimeline || '',
+    platformExpectations: Array.isArray(prefs.platformExpectations) ? prefs.platformExpectations : [],
+    referralSources: Array.isArray(prefs.referralSources) ? prefs.referralSources : [],
     countries: Array.isArray(prefs.countries) ? prefs.countries : [],
     countryInput: '',
     channels: Array.isArray(channels) ? channels : [],
@@ -449,7 +566,10 @@ function restoreOnboardingStep(profile, form) {
     return Math.min(TOTAL_STEPS, saved);
   }
   if (saved <= 1) return form.audienceRole ? 2 : 1;
-  return Math.min(TOTAL_STEPS, saved + 1);
+  if (saved === 2) return 8;
+  if (saved === 3) return 9;
+  if (saved === 4) return 10;
+  return 11;
 }
 
 function buildSavePayload(form, step, { completed = false } = {}) {
@@ -468,6 +588,13 @@ function buildSavePayload(form, step, { completed = false } = {}) {
     preferences: {
       niche: form.niche,
       audienceRole: form.audienceRole,
+      teamSize: form.teamSize,
+      monthlyRevenue: form.monthlyRevenue,
+      businessModel: form.businessModel,
+      businessCategories: form.businessCategories,
+      marketingTimeline: form.marketingTimeline,
+      platformExpectations: form.platformExpectations,
+      referralSources: form.referralSources,
       countries: form.countries,
       extracted: form.extracted,
       scrapeCache: form.scrapeCache,
@@ -502,6 +629,13 @@ export default function Onboarding() {
     industryOther: '',
     niche: '',
     audienceRole: '',
+    teamSize: '',
+    monthlyRevenue: '',
+    businessModel: '',
+    businessCategories: [],
+    marketingTimeline: '',
+    platformExpectations: [],
+    referralSources: [],
     countries: [],
     countryInput: '',
     channels: [],
@@ -523,8 +657,12 @@ export default function Onboarding() {
     ...params,
     audience_role: roleRef.current || '',
   });
-  const roleFlow = ROLE_FLOWS[form.audienceRole] || null;
-  const stepCopy = step === 1 ? ROLE_PICKER_COPY : ((roleFlow?.steps?.[step]) || ROLE_PICKER_COPY);
+  const roleFlow = ROLE_FLOWS[resolveRoleFlowKey(form.audienceRole)] || null;
+  const flowStep = step >= 8 ? step - BRAND_FLOW_STEP_OFFSET : step;
+  const stepCopy =
+    step === 1
+      ? ROLE_PICKER_COPY
+      : SETUP_STEP_COPY[step] || ((roleFlow?.steps?.[flowStep]) || ROLE_PICKER_COPY);
 
   const markQuestionAnswered = (questionKey) => {
     const question = ONBOARDING_QUESTIONS.find((item) => item.key === questionKey);
@@ -554,10 +692,6 @@ export default function Onboarding() {
     if (!q) return CHANNEL_OPTIONS;
     return CHANNEL_OPTIONS.filter((name) => name.toLowerCase().includes(q));
   }, [form.channelInput]);
-
-  useEffect(() => {
-    preloadUnlockShowcase();
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -598,7 +732,7 @@ export default function Onboarding() {
         const restoredStep = restoreOnboardingStep(profile, restored);
         if (Number(profile.onboarding_completed)) {
           completedRef.current = true;
-          navigate('/onboarding/unlock', { replace: true });
+          navigate('/app', { replace: true });
           return;
         }
         setForm((prev) => ({ ...prev, ...restored }));
@@ -616,7 +750,7 @@ export default function Onboarding() {
   }, [getToken, navigate]);
 
   useEffect(() => {
-    if (step !== 4) return;
+    if (step !== 10) return;
     if ((form.channels || []).length) return;
     const industry = form.industry === 'Other' ? form.industryOther : form.industry;
     const defaults = defaultChannelsForIndustry(industry);
@@ -676,7 +810,7 @@ export default function Onboarding() {
     try {
       await persistStep(nextStep, { completed });
       setStep(nextStep);
-      if (step === 4) markQuestionAnswered('channels');
+      if (step === 10) markQuestionAnswered('channels');
       trackEvent('onboarding_step_continue', withRole({
         from_step_index: step - 1,
         from_step_key: ONBOARDING_SCREENS[step]?.key,
@@ -729,8 +863,8 @@ export default function Onboarding() {
       };
       setForm(nextForm);
       const token2 = await getToken();
-      await patchOnboardingProfile(token2, buildSavePayload(nextForm, 3));
-      setStep(3);
+      await patchOnboardingProfile(token2, buildSavePayload(nextForm, 9));
+      setStep(9);
       trackEvent('onboarding_website_extracted', withRole({
         confidence: extracted.confidence || 'unknown',
       }));
@@ -745,9 +879,9 @@ export default function Onboarding() {
       try {
         const token = await getToken();
         if (!token) throw new Error('Authentication error. Please refresh and try again.');
-        await patchOnboardingProfile(token, buildSavePayload(nextForm, 3));
+        await patchOnboardingProfile(token, buildSavePayload(nextForm, 9));
         setForm(nextForm);
-        setStep(3);
+        setStep(9);
         markQuestionAnswered('website');
         showWarning('We could not scan the site. Confirm the brand so we can still match ads in that niche.');
       } catch {
@@ -784,6 +918,34 @@ export default function Onboarding() {
     return true;
   };
 
+  const validateSetupStep = () => {
+    if (step === 1 && !form.audienceRole) {
+      showWarning('Select who you are so we can show the right questions.');
+      return false;
+    }
+    if (step === 2 && !form.teamSize) {
+      showWarning('Select your current team size.');
+      return false;
+    }
+    if (step === 3 && !form.monthlyRevenue) {
+      showWarning('Select your current monthly revenue.');
+      return false;
+    }
+    if (step === 4 && !form.businessModel) {
+      showWarning('Select your business model.');
+      return false;
+    }
+    if (step === 5 && !form.marketingTimeline) {
+      showWarning('Select when you need marketing help.');
+      return false;
+    }
+    if (step === 6 && !(form.platformExpectations || []).length) {
+      showWarning('Select at least one platform expectation.');
+      return false;
+    }
+    return true;
+  };
+
   const handleGenerateVoice = async () => {
     setGeneratingVoice(true);
     try {
@@ -810,7 +972,7 @@ export default function Onboarding() {
     completedRef.current = true;
     setSaving(true);
     try {
-      await persistStep(5, { completed: true });
+      await persistStep(TOTAL_STEPS, { completed: true });
       trackEvent('onboarding_completed', withRole());
       trackMetaCompleteRegistration({ content_name: 'onboarding_finished' });
       navigate('/onboarding/unlock', { replace: true });
@@ -857,13 +1019,27 @@ export default function Onboarding() {
     }));
   };
 
+  const setSingleChoice = (key, value) => {
+    setForm((prev) => ({ ...prev, [key]: prev[key] === value ? '' : value }));
+  };
+
+  const toggleMultiChoice = (key, value) => {
+    setForm((prev) => {
+      const current = Array.isArray(prev[key]) ? prev[key] : [];
+      const next = current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value];
+      return { ...prev, [key]: next };
+    });
+  };
+
   if (loading) {
     return <CubeLoaderOverlay label="Loading onboarding…" fullscreen />;
   }
 
   return (
     <section className="min-h-screen bg-[#040404] text-white">
-      <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 py-6 md:py-10">
+      <div className="mx-auto flex min-h-screen w-full max-w-5xl flex-col px-4 py-6 md:py-10">
         <header className="mb-8">
           <p className="text-[11px] uppercase tracking-[0.2em] text-emerald-300">
             {roleFlow?.eyebrow || ROLE_PICKER_COPY.eyebrow}
@@ -882,7 +1058,7 @@ export default function Onboarding() {
               <div>
                 <label className="block text-sm font-semibold text-white">Who are you?</label>
                 <p className="mt-1 text-xs text-slate-500">The next screens change based on this.</p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
                   {ROLE_OPTIONS.map((role) => {
                     const selected = form.audienceRole === role.key;
                     return (
@@ -892,34 +1068,91 @@ export default function Onboarding() {
                         onClick={() => {
                           setForm((prev) => ({ ...prev, audienceRole: role.key }));
                         }}
-                        className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-left transition ${
+                        className={`rounded-2xl border px-4 py-3 text-center text-sm font-semibold transition ${
                           selected
-                            ? 'border-emerald-400/50 bg-emerald-400/10'
-                            : 'border-white/12 bg-[#0d0d0d] hover:border-white/20'
+                            ? 'border-emerald-400/50 bg-emerald-400 text-black shadow-[0_10px_24px_rgba(52,211,153,0.18)]'
+                            : 'border-white/12 bg-white text-slate-700 hover:border-emerald-300 hover:text-slate-950'
                         }`}
                       >
-                        <span
-                          className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-                            selected
-                              ? 'bg-emerald-400/15 text-emerald-300'
-                              : 'bg-white/5 text-slate-300'
-                          }`}
-                        >
-                          <RoleIcon name={role.icon} />
-                        </span>
-                        <span>
-                          <p className="text-sm font-semibold text-white">{role.label}</p>
-                          <p className="mt-1 text-xs text-slate-400">{role.detail}</p>
-                        </span>
+                        {role.label}
                       </button>
                     );
                   })}
                 </div>
               </div>
+
             </div>
           ) : null}
 
           {step === 2 ? (
+            <ChoiceSection
+              title="How big is your current team?"
+              options={TEAM_SIZE_OPTIONS}
+              value={form.teamSize}
+              onSelect={(value) => setSingleChoice('teamSize', value)}
+            />
+          ) : null}
+
+          {step === 3 ? (
+            <ChoiceSection
+              title="What is your current monthly revenue?"
+              options={MONTHLY_REVENUE_OPTIONS}
+              value={form.monthlyRevenue}
+              onSelect={(value) => setSingleChoice('monthlyRevenue', value)}
+            />
+          ) : null}
+
+          {step === 4 ? (
+            <div className="space-y-6">
+              <ChoiceSection
+                title="Business model"
+                options={BUSINESS_MODEL_OPTIONS}
+                value={form.businessModel}
+                onSelect={(value) => setSingleChoice('businessModel', value)}
+              />
+
+              <ChoiceSection
+                title="Business category (select all that apply)"
+                options={BUSINESS_CATEGORY_OPTIONS}
+                value={form.businessCategories}
+                multiple
+                columns="sm:grid-cols-4"
+                onSelect={(value) => toggleMultiChoice('businessCategories', value)}
+              />
+            </div>
+          ) : null}
+
+          {step === 5 ? (
+            <ChoiceSection
+              title="Select one"
+              options={MARKETING_TIMELINE_OPTIONS}
+              value={form.marketingTimeline}
+              onSelect={(value) => setSingleChoice('marketingTimeline', value)}
+            />
+          ) : null}
+
+          {step === 6 ? (
+            <ChoiceSection
+              title="What do you expect from the platform? Select all that apply"
+              options={PLATFORM_EXPECTATION_OPTIONS}
+              value={form.platformExpectations}
+              multiple
+              onSelect={(value) => toggleMultiChoice('platformExpectations', value)}
+            />
+          ) : null}
+
+          {step === 7 ? (
+            <ChoiceSection
+              title="How did you hear about us? Select all that apply"
+              options={REFERRAL_SOURCE_OPTIONS}
+              value={form.referralSources}
+              multiple
+              columns="sm:grid-cols-5"
+              onSelect={(value) => toggleMultiChoice('referralSources', value)}
+            />
+          ) : null}
+
+          {step === 8 ? (
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-semibold text-white">{stepCopy.websiteLabel}</label>
@@ -936,7 +1169,7 @@ export default function Onboarding() {
             </div>
           ) : null}
 
-          {step === 3 ? (
+          {step === 9 ? (
             <div className="space-y-4">
               {lowConfidence ? (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
@@ -995,7 +1228,7 @@ export default function Onboarding() {
             </div>
           ) : null}
 
-          {step === 4 ? (
+          {step === 10 ? (
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-semibold text-white">{stepCopy.countriesLabel || 'Countries'}</label>
@@ -1126,7 +1359,7 @@ export default function Onboarding() {
             </div>
           ) : null}
 
-          {step === 5 ? (
+          {step === 11 ? (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <label className="block text-sm font-semibold text-white">{stepCopy.storyLabel || 'Winning angles'}</label>
@@ -1179,25 +1412,22 @@ export default function Onboarding() {
             </div>
 
             <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
-              {step === 1 ? (
+              {step <= 7 ? (
                 <button
                   type="button"
                   onClick={() => {
-                    if (!form.audienceRole) {
-                      showWarning('Select who you are so we can show the right questions.');
-                      return;
-                    }
-                    markQuestionAnswered('role');
-                    goToStep(2);
+                    if (!validateSetupStep()) return;
+                    if (step === 1) markQuestionAnswered('role');
+                    goToStep(step + 1);
                   }}
-                  disabled={saving || !form.audienceRole}
+                  disabled={saving}
                   className="min-w-[160px] rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-black disabled:opacity-60"
                 >
                   Continue
                 </button>
               ) : null}
 
-              {step === 2 ? (
+              {step === 8 ? (
                 <button
                   type="button"
                   onClick={handleExtractAndContinue}
@@ -1208,12 +1438,12 @@ export default function Onboarding() {
                 </button>
               ) : null}
 
-              {step === 3 ? (
+              {step === 9 ? (
                 <button
                   type="button"
                   onClick={() => {
                     if (!validateStep2()) return;
-                    goToStep(4);
+                    goToStep(10);
                   }}
                   disabled={saving}
                   className="min-w-[160px] rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-black disabled:opacity-60"
@@ -1222,12 +1452,12 @@ export default function Onboarding() {
                 </button>
               ) : null}
 
-              {step === 4 ? (
+              {step === 10 ? (
                 <button
                   type="button"
                   onClick={() => {
                     if (!validateStep3()) return;
-                    goToStep(5);
+                    goToStep(11);
                   }}
                   disabled={saving}
                   className="min-w-[160px] rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-black disabled:opacity-60"
@@ -1236,7 +1466,7 @@ export default function Onboarding() {
                 </button>
               ) : null}
 
-              {step === 5 ? (
+              {step === 11 ? (
                 <button
                   type="button"
                   onClick={finishSetup}

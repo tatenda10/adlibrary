@@ -27,6 +27,9 @@ function OnboardingBilling() {
 
   const checkoutPlan = searchParams.get('checkoutPlan') || '';
   const checkoutState = searchParams.get('checkout') || '';
+  const checkoutEventId =
+    searchParams.get('payment_id') || searchParams.get('subscription_id') || '';
+  const checkoutHandledRef = useRef('');
 
   useEffect(() => {
     let cancelled = false;
@@ -50,58 +53,94 @@ function OnboardingBilling() {
 
   useEffect(() => {
     if (!checkoutState) {
-      setCheckoutNotice('');
-      return;
+      setCheckoutNotice((prev) => (prev === 'verifying' ? '' : prev));
+      return undefined;
     }
+
     if (checkoutState === 'canceled') {
+      if (checkoutHandledRef.current === 'canceled') return undefined;
+      checkoutHandledRef.current = 'canceled';
       setCheckoutNotice('canceled');
       showInfoToast('Payment canceled. Choose a plan below to continue.');
       trackEvent('onboarding_billing_checkout_canceled', withRole({
         plan_key: checkoutPlan || '',
       }));
-      const nextParams = new URLSearchParams(searchParams);
-      nextParams.delete('checkout');
-      setSearchParams(nextParams, { replace: true });
-      return;
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        ['checkout', 'checkoutPlan', 'subscription_id', 'payment_id', 'status', 'email'].forEach((key) => {
+          next.delete(key);
+        });
+        return next;
+      }, { replace: true });
+      return undefined;
     }
-    if (checkoutState !== 'success') return;
+
+    if (checkoutState !== 'success') return undefined;
+    if (checkoutHandledRef.current === 'success') return undefined;
+    checkoutHandledRef.current = 'success';
 
     let cancelled = false;
+    const planKeyAtStart = checkoutPlan;
+    const eventIdAtStart = checkoutEventId;
+    const subscriptionIdAtStart = searchParams.get('subscription_id') || '';
+
     async function finalizeBilling() {
       try {
         setCheckoutNotice('verifying');
-        const data = await refreshBilling();
+
+        let data = null;
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          data = await refreshBilling({
+            silent: true,
+            subscriptionId: subscriptionIdAtStart || undefined,
+          });
+          if (cancelled) return;
+          if (data?.subscription?.is_active) break;
+          if (attempt < 3) {
+            await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
+          }
+        }
+
         const isActive = Boolean(data?.subscription?.is_active);
         if (cancelled) return;
         if (isActive) {
           setCheckoutNotice('success');
           progressedRef.current = true;
           trackEvent('onboarding_billing_payment_success', withRole({
-            plan_key: checkoutPlan || data?.subscription?.plan_key || data?.subscription?.current_plan || '',
+            plan_key: planKeyAtStart || data?.subscription?.plan_key || data?.subscription?.current_plan || '',
           }));
           trackCheckoutCompletedFromBilling(data?.subscription, {
-            planKey: checkoutPlan || data?.subscription?.plan_key || data?.subscription?.current_plan,
-            eventId:
-              searchParams.get('payment_id') ||
-              searchParams.get('subscription_id') ||
-              undefined,
+            planKey: planKeyAtStart || data?.subscription?.plan_key || data?.subscription?.current_plan,
+            eventId: eventIdAtStart || undefined,
           });
-          const nextParams = new URLSearchParams(searchParams);
-          nextParams.delete('checkout');
-          setSearchParams(nextParams, { replace: true });
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            ['checkout', 'checkoutPlan', 'subscription_id', 'payment_id', 'status', 'email'].forEach((key) => {
+              next.delete(key);
+            });
+            return next;
+          }, { replace: true });
           navigate('/app', { replace: true });
         } else {
           setCheckoutNotice('failed');
-          const nextParams = new URLSearchParams(searchParams);
-          nextParams.delete('checkout');
-          setSearchParams(nextParams, { replace: true });
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            ['checkout', 'checkoutPlan', 'subscription_id', 'payment_id', 'status', 'email'].forEach((key) => {
+              next.delete(key);
+            });
+            return next;
+          }, { replace: true });
         }
       } catch {
         if (!cancelled) {
           setCheckoutNotice('failed');
-          const nextParams = new URLSearchParams(searchParams);
-          nextParams.delete('checkout');
-          setSearchParams(nextParams, { replace: true });
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            ['checkout', 'checkoutPlan', 'subscription_id', 'payment_id', 'status', 'email'].forEach((key) => {
+              next.delete(key);
+            });
+            return next;
+          }, { replace: true });
         }
       }
     }
@@ -110,7 +149,7 @@ function OnboardingBilling() {
     return () => {
       cancelled = true;
     };
-  }, [checkoutState, navigate, refreshBilling, searchParams, setSearchParams]);
+  }, [checkoutEventId, checkoutPlan, checkoutState, navigate, refreshBilling, setSearchParams]);
 
   useEffect(() => {
     trackEvent('onboarding_billing_viewed', withRole({

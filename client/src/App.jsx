@@ -5,6 +5,7 @@ import DashboardLayout from './components/DashboardLayout.jsx';
 import CroAudit from './pages/CroAudit.jsx';
 import Bookmarks from './pages/Bookmarks.jsx';
 import Landing from './pages/Landing.jsx';
+import AuthPage from './pages/AuthPage.jsx';
 import TikTokTrending from './pages/TikTokTrending.jsx';
 import TikTokHotTakes from './pages/TikTokHotTakes.jsx';
 // import TikTokSaved from './pages/TikTokSaved.jsx';
@@ -13,10 +14,10 @@ import TikTokWorkspaceFolder from './pages/TikTokWorkspaceFolder.jsx';
 // import TikTokForYou from './pages/TikTokForYou.jsx';
 import TikTokAnalysisPage from './pages/TikTokAnalysisPage.jsx';
 import TikTokTrendingMusic from './pages/TikTokTrendingMusic.jsx';
-import TikTokCreators from './pages/TikTokCreators.jsx';
+// import TikTokCreators from './pages/TikTokCreators.jsx';
 // import TikTokTrendingHashtags from './pages/TikTokTrendingHashtags.jsx';
-import TikTokPredictor from './pages/TikTokPredictor.jsx';
-import TikTokHooks from './pages/TikTokHooks.jsx';
+// import TikTokPredictor from './pages/TikTokPredictor.jsx';
+// import TikTokHooks from './pages/TikTokHooks.jsx';
 // import TikTokCollectionsIndex from './pages/TikTokCollectionsIndex.jsx';
 // import TikTokCollectionPage from './pages/TikTokCollectionPage.jsx';
 import FacebookAds from './pages/FacebookAds.jsx';
@@ -35,7 +36,6 @@ import Onboarding from './pages/Onboarding.jsx';
 import OnboardingUnlock from './pages/OnboardingUnlock.jsx';
 import OnboardingBilling from './pages/OnboardingBilling.jsx';
 import SubscriptionExpired from './pages/SubscriptionExpired.jsx';
-import Settings from './pages/Settings.jsx';
 import Tutorial from './pages/Tutorial.jsx';
 import DecisionEngine from './pages/DecisionEngine.jsx';
 import CompetitorRadar from './pages/CompetitorRadar.jsx';
@@ -43,11 +43,18 @@ import CompetitorFunnelSpy from './pages/CompetitorFunnelSpy.jsx';
 import CompetitorAngleMap from './pages/CompetitorAngleMap.jsx';
 import Blog from './pages/Blog.jsx';
 import SavedPlans from './pages/SavedPlans.jsx';
+import ContentLibrary from './pages/ContentLibrary.jsx';
+import Home from './pages/Home.jsx';
+import Content from './pages/Content.jsx';
+import CreateContent from './pages/CreateContent.jsx';
+import ReferEarn from './pages/ReferEarn.jsx';
+import Brand from './pages/Brand.jsx';
+import Influencers from './pages/Influencers.jsx';
 import MonthlySocialMediaPlanner from './components/decision-engine/MonthlySocialMediaPlanner.jsx';
 import { getOnboardingStatus, setAuthExpiredHandler } from './lib/api.js';
-import { preloadUnlockShowcase } from './lib/unlockShowcase.js';
 import { useBilling } from './components/billing/BillingContext.jsx';
-import { RequirePaidAccess, RequireProAccess } from './components/billing/BillingRouteGuards.jsx';
+import { RequirePaidAccess, RequireFeature } from './components/billing/BillingRouteGuards.jsx';
+import { FEATURES } from './lib/entitlements.js';
 import { CubeLoaderOverlay } from './components/CubeLoader.jsx';
 import { trackPageView } from './lib/firebaseAnalytics.js';
 import AnalyticsBridge from './components/AnalyticsBridge.jsx';
@@ -90,7 +97,7 @@ function RequireAuth() {
     return <AppLoadingScreen />;
   }
 
-  return isSignedIn ? <Outlet /> : <Navigate to="/" replace />;
+  return isSignedIn ? <Outlet /> : <Navigate to="/sign-in" replace />;
 }
 
 function PublicOnly() {
@@ -110,13 +117,15 @@ function PublicOnly() {
 function RequireOnboarding() {
   const location = useLocation();
   const { isLoaded, isSignedIn, getToken } = useAuth();
+  const { loading: billingLoading, subscription } = useBilling();
   const [checking, setChecking] = useState(true);
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
-
-  useEffect(() => {
-    if (!isSignedIn) return;
-    preloadUnlockShowcase();
-  }, [isSignedIn]);
+  const [statusPaidAccess, setStatusPaidAccess] = useState(false);
+  const [statusCompleted, setStatusCompleted] = useState(false);
+  const hasPaidAccess =
+    Boolean(subscription?.is_active || subscription?.is_paid) ||
+    ['starter', 'pro', 'agency'].includes(String(subscription?.plan_key || subscription?.current_plan || '').toLowerCase()) ||
+    Boolean(subscription?.dodo_subscription_id || subscription?.dodo_customer_id);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,8 +143,12 @@ function RequireOnboarding() {
         }
         const status = await getOnboardingStatus(token);
         if (!cancelled) {
-          setNeedsOnboarding(!status?.completed);
-          if (status?.completed) {
+          const statusHasPaidAccess = Boolean(status?.hasPaidAccess || status?.paid || status?.subscription?.is_active);
+          const completed = Boolean(status?.completed);
+          setStatusPaidAccess(statusHasPaidAccess);
+          setStatusCompleted(completed);
+          setNeedsOnboarding(!completed && !statusHasPaidAccess);
+          if (completed) {
             clearPendingOnboardingFlow();
           }
           setChecking(false);
@@ -155,16 +168,22 @@ function RequireOnboarding() {
     };
   }, [getToken, isLoaded, isSignedIn]);
 
-  if (!isLoaded || checking) {
+  if (!isLoaded || checking || (billingLoading && !statusPaidAccess)) {
     return <AppLoadingScreen />;
   }
 
   if (!isSignedIn) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/sign-in" replace />;
+  }
+
+  const canSkipOnboarding = hasPaidAccess || statusPaidAccess || statusCompleted;
+
+  if (canSkipOnboarding && location.pathname.startsWith('/onboarding')) {
+    return <Navigate to="/app" replace />;
   }
 
   const inOnboardingRoute = location.pathname.startsWith('/onboarding');
-  if (needsOnboarding && !inOnboardingRoute) {
+  if (needsOnboarding && !canSkipOnboarding && !inOnboardingRoute) {
     return <Navigate to="/onboarding" replace />;
   }
 
@@ -172,20 +191,6 @@ function RequireOnboarding() {
 }
 
 function RequireBillingSetup() {
-  const location = useLocation();
-  const { loading, subscription } = useBilling();
-
-  if (loading) {
-    return <AppLoadingScreen />;
-  }
-
-  if (!subscription?.is_active) {
-    if (subscription?.had_subscription_before) {
-      return <Navigate to="/subscription-expired" replace />;
-    }
-    return <Navigate to="/onboarding/billing" replace state={{ from: location.pathname }} />;
-  }
-
   return <Outlet />;
 }
 
@@ -206,6 +211,8 @@ function App() {
       <MetaPixelBridge />
       <Routes>
       <Route path="/" element={<PublicOnly />} />
+      <Route path="/sign-in/*" element={<AuthPage mode="sign-in" />} />
+      <Route path="/sign-up/*" element={<AuthPage mode="sign-up" />} />
       <Route path="/blog" element={<Blog />} />
       <Route path="/blog/:slug" element={<Blog />} />
       <Route element={<RequireAuth />}>
@@ -216,16 +223,18 @@ function App() {
           <Route path="/subscription-expired" element={<SubscriptionExpired />} />
           <Route element={<RequireBillingSetup />}>
             <Route element={<DashboardLayout />}>
-              <Route path="/app" element={<Navigate to="/facebook/ads" replace />} />
+              <Route path="/app" element={<RequirePaidAccess><Home /></RequirePaidAccess>} />
               <Route path="/app/cro-audit" element={<Navigate to="/website/cro-audit" replace />} />
               <Route path="/website" element={<Navigate to="/facebook/ads" replace />} />
-              <Route path="/website/cro-audit" element={<RequireProAccess><CroAudit /></RequireProAccess>} />
-              <Route path="/website/funnel-spy" element={<RequireProAccess><CompetitorFunnelSpy /></RequireProAccess>} />
-              <Route path="/website/angle-map" element={<RequireProAccess><CompetitorAngleMap /></RequireProAccess>} />
-              <Route path="/website/saved" element={<RequireProAccess><CroAudit /></RequireProAccess>} />
+              <Route path="/website/cro-audit" element={<RequireFeature feature={FEATURES.WEBSITE_RESEARCH}><CroAudit /></RequireFeature>} />
+              <Route path="/website/funnel-spy" element={<RequireFeature feature={FEATURES.WEBSITE_RESEARCH}><CompetitorFunnelSpy /></RequireFeature>} />
+              <Route path="/website/angle-map" element={<RequireFeature feature={FEATURES.WEBSITE_RESEARCH}><CompetitorAngleMap /></RequireFeature>} />
+              <Route path="/website/saved" element={<RequireFeature feature={FEATURES.WEBSITE_RESEARCH}><CroAudit /></RequireFeature>} />
               <Route path="/facebook" element={<Navigate to="/facebook/ads" replace />} />
+              <Route path="/content-library" element={<Navigate to="/facebook/ad-examples" replace />} />
+              <Route path="/facebook/ad-examples" element={<RequirePaidAccess><ContentLibrary /></RequirePaidAccess>} />
               <Route path="/facebook/ads" element={<RequirePaidAccess><FacebookAds /></RequirePaidAccess>} />
-              <Route path="/facebook/trending-music" element={<RequirePaidAccess><FacebookAds /></RequirePaidAccess>} />
+              <Route path="/facebook/trending-music" element={<Navigate to="/facebook/ads" replace />} />
               <Route path="/facebook/hook-generator" element={<RequirePaidAccess><FacebookAds /></RequirePaidAccess>} />
               <Route path="/facebook/workspace" element={<RequirePaidAccess><FacebookWorkspace /></RequirePaidAccess>} />
               <Route
@@ -251,38 +260,44 @@ function App() {
               <Route path="/reddit" element={<RequirePaidAccess><RedditAds /></RequirePaidAccess>} />
               <Route path="/tiktok/trending" element={<RequirePaidAccess><TikTokTrending /></RequirePaidAccess>} />
               <Route path="/tiktok/hot-takes" element={<RequirePaidAccess><TikTokHotTakes /></RequirePaidAccess>} />
-              <Route path="/tiktok/creators" element={<RequirePaidAccess><TikTokCreators /></RequirePaidAccess>} />
+              {/* <Route path="/tiktok/creators" element={<RequirePaidAccess><TikTokCreators /></RequirePaidAccess>} /> */}
               {/* <Route path="/tiktok/trending-hashtags" element={<RequirePaidAccess><TikTokTrendingHashtags /></RequirePaidAccess>} /> */}
-              <Route path="/tiktok/knowledge-hub" element={<Navigate to="/tiktok/hooks" replace />} />
-              <Route path="/tiktok/hooks" element={<RequireProAccess><TikTokHooks /></RequireProAccess>} />
+              {/* <Route path="/tiktok/knowledge-hub" element={<Navigate to="/tiktok/hooks" replace />} /> */}
+              {/* <Route path="/tiktok/hooks" element={<RequireFeature feature={FEATURES.TIKTOK_HOOKS}><TikTokHooks /></RequireFeature>} /> */}
               <Route path="/tiktok/workspace" element={<RequirePaidAccess><TikTokWorkspace /></RequirePaidAccess>} />
               <Route
                 path="/tiktok/workspace/:folderId"
                 element={<RequirePaidAccess><TikTokWorkspaceFolder /></RequirePaidAccess>}
               />
               {/* <Route path="/tiktok/saved" element={<RequirePaidAccess><TikTokSaved /></RequirePaidAccess>} /> */}
-              {/* <Route path="/tiktok/for-you" element={<RequireProAccess><TikTokForYou /></RequireProAccess>} /> */}
+              {/* <Route path="/tiktok/for-you" element={<RequireFeature feature={FEATURES.TIKTOK_HOOKS}><TikTokForYou /></RequireFeature>} /> */}
               <Route path="/tiktok/trending-music" element={<RequirePaidAccess><TikTokTrendingMusic /></RequirePaidAccess>} />
-              <Route path="/tiktok/predictor" element={<RequireProAccess><TikTokPredictor /></RequireProAccess>} />
+              {/* <Route path="/tiktok/predictor" element={<RequireFeature feature={FEATURES.TIKTOK_PREDICTOR}><TikTokPredictor /></RequireFeature>} /> */}
               {/* <Route path="/tiktok/collections" element={<RequirePaidAccess><TikTokCollectionsIndex /></RequirePaidAccess>} /> */}
               {/* <Route path="/tiktok/collections/:id" element={<RequirePaidAccess><TikTokCollectionPage /></RequirePaidAccess>} /> */}
               <Route path="/tiktok/analysis/:key" element={<TikTokAnalysisPage />} />
               <Route path="/bookmarks" element={<RequirePaidAccess><Bookmarks /></RequirePaidAccess>} />
               <Route path="/notes" element={<RequirePaidAccess><Notes /></RequirePaidAccess>} />
               <Route path="/app/decision-engine" element={<RequirePaidAccess><DecisionEngine /></RequirePaidAccess>} />
-              <Route path="/app/competitor-analysis" element={<RequireProAccess><CompetitorRadar /></RequireProAccess>} />
-              <Route path="/app/competitor-analysis/results" element={<RequireProAccess><CompetitorRadar /></RequireProAccess>} />
-              <Route path="/app/competitor-analysis/competitors/:competitorId" element={<RequireProAccess><CompetitorRadar /></RequireProAccess>} />
-              <Route path="/app/competitor-radar" element={<RequireProAccess><CompetitorRadar /></RequireProAccess>} />
-              <Route path="/app/competitor-radar/results" element={<RequireProAccess><CompetitorRadar /></RequireProAccess>} />
-              <Route path="/app/competitor-radar/competitors/:competitorId" element={<RequireProAccess><CompetitorRadar /></RequireProAccess>} />
+              <Route path="/app/competitor-analysis" element={<RequireFeature feature={FEATURES.COMPETITOR_RADAR}><CompetitorRadar /></RequireFeature>} />
+              <Route path="/app/competitor-analysis/results" element={<RequireFeature feature={FEATURES.COMPETITOR_RADAR}><CompetitorRadar /></RequireFeature>} />
+              <Route path="/app/competitor-analysis/competitors/:competitorId" element={<RequireFeature feature={FEATURES.COMPETITOR_RADAR}><CompetitorRadar /></RequireFeature>} />
+              <Route path="/app/competitor-radar" element={<RequireFeature feature={FEATURES.COMPETITOR_RADAR}><CompetitorRadar /></RequireFeature>} />
+              <Route path="/app/competitor-radar/results" element={<RequireFeature feature={FEATURES.COMPETITOR_RADAR}><CompetitorRadar /></RequireFeature>} />
+              <Route path="/app/competitor-radar/competitors/:competitorId" element={<RequireFeature feature={FEATURES.COMPETITOR_RADAR}><CompetitorRadar /></RequireFeature>} />
               <Route path="/app/monthly-social-media-plan" element={<RequirePaidAccess><MonthlySocialMediaPlanner /></RequirePaidAccess>} />
               <Route path="/app/monthly-social-media-plan/:month" element={<RequirePaidAccess><MonthlySocialMediaPlanner /></RequirePaidAccess>} />
               <Route path="/app/monthly-social-media-plan/:month/:date" element={<RequirePaidAccess><MonthlySocialMediaPlanner /></RequirePaidAccess>} />
+              <Route path="/app/content" element={<RequirePaidAccess><Content /></RequirePaidAccess>} />
+              <Route path="/app/create-content" element={<RequirePaidAccess><Content /></RequirePaidAccess>} />
+              <Route path="/app/ai-studio" element={<RequirePaidAccess><CreateContent /></RequirePaidAccess>} />
+              <Route path="/app/influencers" element={<RequirePaidAccess><Influencers /></RequirePaidAccess>} />
               <Route path="/app/saved-plans" element={<RequirePaidAccess><SavedPlans /></RequirePaidAccess>} />
               <Route path="/tutorial" element={<Tutorial />} />
               <Route path="/billing" element={<Billing />} />
-              <Route path="/settings/*" element={<Settings />} />
+              <Route path="/refer-and-earn" element={<RequirePaidAccess><ReferEarn /></RequirePaidAccess>} />
+              <Route path="/brand" element={<RequirePaidAccess><Brand /></RequirePaidAccess>} />
+              <Route path="/settings/*" element={<Navigate to="/brand" replace />} />
             </Route>
           </Route>
         </Route>

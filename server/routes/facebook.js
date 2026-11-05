@@ -1,6 +1,7 @@
 const express = require('express');
 const clerkAuth = require('../middleware/clerkAuth');
-const { hydrateSubscription, requirePaidSubscription, requireProSubscription } = require('../middleware/requireSubscription');
+const { hydrateSubscription, requirePaidSubscription, requireFeature } = require('../middleware/requireSubscription');
+const { FEATURES } = require('../utils/entitlements');
 const { searchFacebookAds, intelligentSearchFacebookAds, searchFacebookPagesHandler, proxyFacebookMedia } = require('../controllers/facebookController');
 const facebookWorkspace = require('../controllers/facebookWorkspaceController');
 
@@ -18,7 +19,7 @@ const {
 router.get('/pages/search', clerkAuth, hydrateSubscription, requirePaidSubscription, searchFacebookPagesHandler);
 router.get('/media-proxy', proxyFacebookMedia);
 router.post('/ads', clerkAuth, hydrateSubscription, requirePaidSubscription, searchFacebookAds);
-router.post('/ads/intelligent', clerkAuth, hydrateSubscription, requirePaidSubscription, requireProSubscription, intelligentSearchFacebookAds);
+router.post('/ads/intelligent', clerkAuth, hydrateSubscription, requireFeature(FEATURES.INTELLIGENT_SEARCH), intelligentSearchFacebookAds);
 
 router.get('/workspace/folders', clerkAuth, hydrateSubscription, requirePaidSubscription, listFolders);
 router.post('/workspace/folders', clerkAuth, hydrateSubscription, requirePaidSubscription, createFolder);

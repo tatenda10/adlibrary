@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { SignUpButton } from '@clerk/clerk-react';
+import { Link } from 'react-router-dom';
 import { useApiToast } from '../hooks/useApiToast.js';
 import { previewLandingWebsite } from '../lib/api.js';
 import CubeLoader from './CubeLoader.jsx';
@@ -55,14 +55,13 @@ function WebsiteAnalysisPreviewModal({ websiteUrl, onClose, onSeeMore }) {
             title={report?.title || 'Website conversion snapshot'}
             actions={(
               <>
-                <SignUpButton mode="modal">
-                  <button
-                    onClick={onSeeMore}
-                    className="bg-[#22c55e] px-4 py-1.5 text-[12px] font-semibold text-[#04110a] transition hover:bg-[#34d370]"
-                  >
-                    See more
-                  </button>
-                </SignUpButton>
+                <Link
+                  to="/sign-up"
+                  onClick={onSeeMore}
+                  className="bg-[#22c55e] px-4 py-1.5 text-[12px] font-semibold text-[#04110a] transition hover:bg-[#34d370]"
+                >
+                  See more
+                </Link>
                 <button
                   type="button"
                   onClick={onClose}

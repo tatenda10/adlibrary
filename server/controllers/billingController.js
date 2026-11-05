@@ -7,12 +7,16 @@ const {
   getPlanProductId,
   getPriceForPlan,
   getSubscriptionByUserId,
+  inferPlanKeyFromSubscription,
+  mapDodoSubscriptionToPatch,
   reconcileSubscriptionByUserId,
   resolvePlanKeyFromProductId,
   upsertSubscriptionByUserId,
   verifyDodoWebhookSignature,
 } = require('../utils/billing');
 const { getLimitsForSubscription, getUsageSummaryByUserId } = require('../utils/usage');
+const { resolveEntitlements, getLimitsForPlanKey, getFeaturesForPlanKey } = require('../utils/entitlements');
+const { getCreditSummary } = require('../utils/credits');
 
 function pickDisplayName(user) {
   const firstName = String(user?.firstName || user?.first_name || '').trim();
@@ -37,22 +41,19 @@ function hadPaidSubscriptionBefore(subscription) {
 function formatBillingResponse(subscription) {
   const plan = subscription.plan_key || PLAN_KEYS.UNSUBSCRIBED;
   const price = getPriceForPlan(plan);
-  const entitlements = getLimitsForSubscription(subscription);
+  const resolved = resolveEntitlements(subscription);
+  const limits = resolved.limits || getLimitsForSubscription(subscription);
 
   return {
     ...subscription,
     current_plan: plan,
     monthly_price: price,
-    entitlements,
+    entitlements: limits,
+    features: resolved.features || {},
+    limits,
+    catalog_version: resolved.catalog_version,
     had_subscription_before: hadPaidSubscriptionBefore(subscription),
   };
-}
-
-function parseDateOrNull(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString().slice(0, 19).replace('T', ' ');
 }
 
 function extractArrayPayload(payload) {
@@ -61,114 +62,6 @@ function extractArrayPayload(payload) {
   if (Array.isArray(payload?.data)) return payload.data;
   if (Array.isArray(payload?.subscriptions)) return payload.subscriptions;
   return [];
-}
-
-function pickBestSubscription(candidates = []) {
-  if (!candidates.length) return null;
-  const scored = [...candidates].sort((a, b) => {
-    const aStatus = String(a?.status || '').toLowerCase();
-    const bStatus = String(b?.status || '').toLowerCase();
-    const aActive = ['active', 'trialing', 'on_trial'].includes(aStatus) ? 1 : 0;
-    const bActive = ['active', 'trialing', 'on_trial'].includes(bStatus) ? 1 : 0;
-    if (aActive !== bActive) return bActive - aActive;
-    const aDate = new Date(a?.updated_at || a?.updatedAt || a?.created_at || a?.createdAt || 0).getTime();
-    const bDate = new Date(b?.updated_at || b?.updatedAt || b?.created_at || b?.createdAt || 0).getTime();
-    return bDate - aDate;
-  });
-  return scored[0];
-}
-
-function mapDodoSubscriptionToPatch(subscription, fallbackCustomerId) {
-  if (!subscription || typeof subscription !== 'object') return null;
-  const inferredPlanKey = inferPlanKeyFromSubscription(subscription);
-  return {
-    dodo_customer_id:
-      subscription.customer_id ||
-      subscription.customer?.customer_id ||
-      fallbackCustomerId ||
-      null,
-    dodo_subscription_id: subscription.subscription_id || subscription.id || null,
-    plan_key: inferredPlanKey,
-    status: subscription.status || 'unsubscribed',
-    currency: subscription.currency || null,
-    recurring_amount:
-      subscription.recurring_pre_tax_amount ??
-      subscription.recurring_amount ??
-      subscription.price_amount ??
-      null,
-    current_period_start: parseDateOrNull(
-      subscription.previous_billing_date ||
-        subscription.current_period_start ||
-        subscription.started_at
-    ),
-    current_period_end: parseDateOrNull(
-      subscription.next_billing_date ||
-        subscription.current_period_end ||
-        subscription.expires_at
-    ),
-    cancel_at_period_end: Boolean(
-      subscription.cancel_at_next_billing_date || subscription.cancel_at_period_end
-    ),
-    latest_invoice_id: subscription.latest_invoice_id || subscription.invoice_id || null,
-    latest_invoice_amount:
-      subscription.latest_invoice_amount ??
-      subscription.latest_invoice?.amount ??
-      null,
-    metadata: subscription.metadata || null,
-  };
-}
-
-function inferPlanKeyFromSubscription(subscription = {}) {
-  const byProductId = resolvePlanKeyFromProductId(subscription.product_id || subscription.product?.product_id);
-  if (byProductId && byProductId !== PLAN_KEYS.UNSUBSCRIBED) return byProductId;
-
-  const productName = String(subscription.product_name || subscription.product?.name || '').toLowerCase();
-  if (productName.includes('pro')) return PLAN_KEYS.PRO;
-  if (productName.includes('starter')) return PLAN_KEYS.STARTER;
-  if (productName.includes('agency')) return PLAN_KEYS.AGENCY;
-
-  const amount = Number(
-    subscription.recurring_pre_tax_amount ??
-      subscription.recurring_amount ??
-      subscription.price_amount ??
-      0
-  );
-  if (amount >= 29900) return PLAN_KEYS.AGENCY;
-  if (amount >= 9900) return PLAN_KEYS.PRO;
-  if (amount >= 4900) return PLAN_KEYS.STARTER;
-  return PLAN_KEYS.UNSUBSCRIBED;
-}
-
-async function fetchDodoSubscriptionsForCustomer(customerId) {
-  const endpointCandidates = [
-    `/subscriptions?customer_id=${encodeURIComponent(customerId)}`,
-    `/customers/${encodeURIComponent(customerId)}/subscriptions`,
-  ];
-
-  for (const endpoint of endpointCandidates) {
-    try {
-      const payload = await dodoRequest(endpoint, { method: 'GET' });
-      const subscriptions = extractArrayPayload(payload);
-      if (subscriptions.length) return subscriptions;
-    } catch {
-      // Try next endpoint shape.
-    }
-  }
-
-  return [];
-}
-
-async function reconcileSubscriptionFromDodo(existingSubscription) {
-  const customerId = existingSubscription?.dodo_customer_id;
-  if (!customerId) return existingSubscription;
-
-  const remoteSubscriptions = await fetchDodoSubscriptionsForCustomer(customerId);
-  const best = pickBestSubscription(remoteSubscriptions);
-  if (!best) return existingSubscription;
-
-  const patch = mapDodoSubscriptionToPatch(best, customerId);
-  if (!patch) return existingSubscription;
-  return upsertSubscriptionByUserId(existingSubscription.user_id, patch);
 }
 
 async function fetchDodoInvoicesForCustomer(customerId) {
@@ -222,9 +115,19 @@ async function getBillingStatus(req, res) {
   try {
     await ensureUser(req.user);
     let subscription = await getSubscriptionByUserId(req.user.id);
-    if (subscription?.dodo_customer_id && !subscription?.is_active) {
+    const subscriptionIdFromQuery =
+      typeof req.query.subscription_id === 'string' ? req.query.subscription_id.trim() : '';
+    const shouldReconcile =
+      Boolean(subscriptionIdFromQuery) ||
+      Boolean(subscription?.dodo_subscription_id) ||
+      Boolean(subscription?.dodo_customer_id);
+
+    if (shouldReconcile && !subscription?.is_active) {
       try {
-        subscription = await reconcileSubscriptionByUserId(req.user.id, { onlyWhenInactive: true });
+        subscription = await reconcileSubscriptionByUserId(req.user.id, {
+          onlyWhenInactive: true,
+          subscriptionId: subscriptionIdFromQuery || subscription?.dodo_subscription_id || null,
+        });
       } catch (syncError) {
         console.warn('Billing reconciliation skipped:', syncError?.message || syncError);
       }
@@ -263,10 +166,12 @@ async function getBillingStatus(req, res) {
     }
 
     const usage = await getUsageSummaryByUserId(req.user.id, subscription);
+    const credits = await getCreditSummary(req.user.id, formatBillingResponse(subscription));
 
     return res.json({
       subscription: formatBillingResponse(subscription),
       usage,
+      credits,
       invoices,
       plans: [
         {
@@ -275,7 +180,9 @@ async function getBillingStatus(req, res) {
           price: 49,
           interval: 'month',
           cta: 'Choose Starter',
-          entitlements: getLimitsForSubscription({ plan_key: PLAN_KEYS.STARTER }),
+          entitlements: getLimitsForPlanKey(PLAN_KEYS.STARTER),
+          limits: getLimitsForPlanKey(PLAN_KEYS.STARTER),
+          features: getFeaturesForPlanKey(PLAN_KEYS.STARTER),
         },
         {
           key: PLAN_KEYS.PRO,
@@ -283,7 +190,9 @@ async function getBillingStatus(req, res) {
           price: 99,
           interval: 'month',
           cta: 'Upgrade to Pro',
-          entitlements: getLimitsForSubscription({ plan_key: PLAN_KEYS.PRO }),
+          entitlements: getLimitsForPlanKey(PLAN_KEYS.PRO),
+          limits: getLimitsForPlanKey(PLAN_KEYS.PRO),
+          features: getFeaturesForPlanKey(PLAN_KEYS.PRO),
         },
         {
           key: PLAN_KEYS.AGENCY,
@@ -291,13 +200,28 @@ async function getBillingStatus(req, res) {
           price: 299,
           interval: 'month',
           cta: 'Talk to Sales',
-          entitlements: getLimitsForSubscription({ plan_key: PLAN_KEYS.AGENCY }),
+          entitlements: getLimitsForPlanKey(PLAN_KEYS.AGENCY),
+          limits: getLimitsForPlanKey(PLAN_KEYS.AGENCY),
+          features: getFeaturesForPlanKey(PLAN_KEYS.AGENCY),
         },
       ],
+      catalog_version: resolveEntitlements(subscription).catalog_version,
     });
   } catch (error) {
     console.error('getBillingStatus error:', error);
     return res.status(500).json({ error: error.message || 'Failed to load billing status' });
+  }
+}
+
+async function getCreditStatus(req, res) {
+  try {
+    await ensureUser(req.user);
+    const subscription = await getSubscriptionByUserId(req.user.id);
+    const credits = await getCreditSummary(req.user.id, formatBillingResponse(subscription));
+    return res.json({ credits });
+  } catch (error) {
+    console.error('getCreditStatus error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to load credit status' });
   }
 }
 
@@ -491,12 +415,32 @@ async function createBillingPortal(req, res) {
   }
 }
 
-function resolveUserIdFromEvent(data) {
-  return (
+async function resolveUserIdFromEvent(data) {
+  const fromMeta =
     data?.metadata?.clerk_user_id ||
     data?.customer?.metadata?.clerk_user_id ||
-    null
-  );
+    null;
+  if (fromMeta) return fromMeta;
+
+  const customerId = data?.customer_id || data?.customer?.customer_id || null;
+  if (customerId) {
+    const [rows] = await pool.query(
+      `SELECT user_id FROM subscriptions WHERE dodo_customer_id = ? LIMIT 1`,
+      [customerId]
+    );
+    if (rows[0]?.user_id) return rows[0].user_id;
+  }
+
+  const subscriptionId = data?.subscription_id || data?.id || null;
+  if (subscriptionId) {
+    const [rows] = await pool.query(
+      `SELECT user_id FROM subscriptions WHERE dodo_subscription_id = ? LIMIT 1`,
+      [subscriptionId]
+    );
+    if (rows[0]?.user_id) return rows[0].user_id;
+  }
+
+  return null;
 }
 
 async function recordWebhookEvent(webhookId, eventType) {
@@ -521,8 +465,13 @@ async function handleBillingWebhook(req, res) {
       return res.json({ ok: true, duplicate: true });
     }
 
-    const userId = resolveUserIdFromEvent(data);
+    const userId = await resolveUserIdFromEvent(data);
     if (!userId) {
+      console.warn('[Billing webhook] Ignored event without resolvable user', {
+        eventType,
+        customerId: data?.customer_id || data?.customer?.customer_id || null,
+        subscriptionId: data?.subscription_id || data?.id || null,
+      });
       return res.json({ ok: true, ignored: true });
     }
 
@@ -532,22 +481,30 @@ async function handleBillingWebhook(req, res) {
       username: data?.customer?.name || null,
     });
 
-    const patch = {
-      dodo_customer_id: data?.customer?.customer_id || null,
-      dodo_subscription_id: data?.subscription_id || null,
+    const patch = mapDodoSubscriptionToPatch(data, data?.customer_id || data?.customer?.customer_id) || {
+      dodo_customer_id: data?.customer_id || data?.customer?.customer_id || null,
+      dodo_subscription_id: data?.subscription_id || data?.id || null,
       plan_key: inferPlanKeyFromSubscription(data),
       status: data?.status || 'unsubscribed',
       currency: data?.currency || null,
       recurring_amount: data?.recurring_pre_tax_amount || null,
-      current_period_start: data?.previous_billing_date || null,
-      current_period_end: data?.next_billing_date || data?.expires_at || null,
-      cancel_at_period_end: Boolean(data?.cancel_at_next_billing_date),
       metadata: data?.metadata || null,
     };
 
+    if (
+      eventType === 'subscription.active' ||
+      eventType === 'subscription.renewed' ||
+      eventType === 'subscription.updated'
+    ) {
+      patch.status = data?.status || 'active';
+      if (!patch.plan_key || patch.plan_key === PLAN_KEYS.UNSUBSCRIBED) {
+        patch.plan_key = inferPlanKeyFromSubscription(data);
+      }
+    }
+
     if (eventType === 'subscription.cancelled' || eventType === 'subscription.expired') {
       patch.status = data?.status || 'canceled';
-      patch.plan_key = resolvePlanKeyFromProductId(data?.product_id) || PLAN_KEYS.UNSUBSCRIBED;
+      patch.plan_key = resolvePlanKeyFromProductId(data?.product_id) || patch.plan_key || PLAN_KEYS.UNSUBSCRIBED;
     }
 
     await upsertSubscriptionByUserId(userId, patch);
@@ -561,6 +518,7 @@ async function handleBillingWebhook(req, res) {
 module.exports = {
   createBillingCheckout,
   createBillingPortal,
+  getCreditStatus,
   getBillingStatus,
   handleBillingWebhook,
 };

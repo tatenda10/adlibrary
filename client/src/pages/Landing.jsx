@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { SignInButton, SignUpButton } from '@clerk/clerk-react';
+import { Link } from 'react-router-dom';
 import { Navbar } from '../components/layout/Navbar.jsx';
 import { SiteFooter } from '../components/layout/SiteFooter.jsx';
 import { PlayingCardFan } from '../components/ui/PlayingCardFan.jsx';
@@ -24,26 +24,86 @@ const HERO_FAN_CARDS = [
   { id: 'nine-spades', rank: '9', suit: 'spades' },
 ];
 
-const FEATURE_BLOCKS = [
+const CROSS_POST_METRICS = [
+  { id: 'tiktok', name: 'TikTok', views: '532.1k', likes: '89.9k', position: 'left-0 top-[18%] md:-left-4 lg:-left-16' },
+  { id: 'instagram', name: 'Instagram', views: '1.2m', likes: '150.2k', position: 'right-0 top-[38%] md:-right-4 lg:-right-20' },
+  { id: 'youtube', name: 'YouTube', views: '340.9k', likes: '75.5k', position: 'bottom-[18%] left-0 md:-left-2 lg:-left-12' },
+];
+
+const CROSS_POST_AVATARS = [
+  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80',
+  'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=120&q=80',
+  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&q=80',
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&q=80',
+  'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=120&q=80',
+];
+
+const UGC_SHOWCASE_CARDS = [
   {
-    title: 'Shared Creative Direction',
-    text: 'Bring your media buyers, strategists, and designers into one workflow with the same visual references.',
-    image: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1200&q=80',
+    id: 'human-ugc',
+    name: 'Jess',
+    kind: 'Human UGC',
+    avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=200&q=80',
+    image: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=900&q=80',
+    caption: "i didn't know this product could actually calm me down in minutes",
+    captionStyle: 'plain',
+    views: '36.3m',
+    likes: '29.4k',
   },
   {
-    title: 'Fast Research Collaboration',
-    text: 'Move from scattered screenshots to focused research sessions with searchable ad examples.',
-    image: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80',
+    id: 'ai-ugc',
+    name: 'Nova AI',
+    kind: 'AI UGC',
+    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+    image: 'https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&w=900&q=80',
+    caption: '7 hooks that make your ads look insanely competent (save these)',
+    captionStyle: 'boxed',
+    views: '495.9k',
+    likes: '23.4k',
   },
   {
-    title: 'Smarter Test Planning',
-    text: 'Use AI signals and proven hooks to prioritize better tests before spending budget.',
-    image: 'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1200&q=80',
+    id: 'ai-influencer',
+    name: 'Mira',
+    kind: 'AI Influencer',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+    image: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=900&q=80',
+    caption: 'POV: your AI creator posts daily while you sleep',
+    captionStyle: 'plain',
+    views: '228k',
+    likes: '5.3k',
   },
   {
-    title: 'Reports Teams Actually Use',
-    text: 'Save, compare, and share findings in clear summaries your team can execute immediately.',
-    image: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1200&q=80',
+    id: 'human-demo',
+    name: 'Marcus',
+    kind: 'Human UGC',
+    avatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=200&q=80',
+    image: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&w=900&q=80',
+    caption: 'watch me unbox the exact creative that converted at 4.2%',
+    captionStyle: 'boxed',
+    views: '170k',
+    likes: '2.4k',
+  },
+  {
+    id: 'ai-character',
+    name: 'Ayo',
+    kind: 'AI Influencer',
+    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
+    image: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=900&q=80',
+    caption: 'same face. same vibe. every short-form video.',
+    captionStyle: 'plain',
+    views: '111k',
+    likes: '1.8k',
+  },
+  {
+    id: 'meme-ugc',
+    name: 'Voltage',
+    kind: 'AI UGC',
+    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80',
+    image: 'https://images.unsplash.com/photo-1607083206869-4c7672e72a8a?auto=format&fit=crop&w=900&q=80',
+    caption: 'when your competitor posts once a week and you ship 30 days overnight',
+    captionStyle: 'boxed',
+    views: '89.2k',
+    likes: '4.1k',
   },
 ];
 
@@ -263,29 +323,28 @@ function Landing() {
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold text-emerald-300">
               <span className="inline-block h-2 w-2 rounded-full bg-emerald-300" />
-              Fresh ad examples across four major channels
+              Research, create, and publish in one place
             </div>
 
             <h1 className="mt-5 text-3xl font-semibold leading-tight tracking-tight md:text-5xl">
-              Find winning ad creative faster with AI agents across TikTok, Instagram, Facebook, and Google Ads.
+              Turn winning ads into content you can ship every week.
             </h1>
 
             <p className="mt-5 max-w-xl text-base leading-7 text-slate-300 md:text-xl">
-              Search proven ad examples, spot repeatable angles, and let AI agents score concepts before launch so your team ships clearer creative direction.
+              Find proven creative, generate AI UGC and influencer videos for your brand, then schedule and post across TikTok, Instagram, YouTube, and LinkedIn.
             </p>
 
             <div className="mt-6 flex flex-wrap gap-3">
-              <SignUpButton mode="modal">
-                <button
-                  onClick={() => {
-                    trackEvent('landing_start_with_starter_clicked', { plan_key: 'starter' });
-                    storePendingCheckoutPlan('starter');
-                  }}
-                  className="rounded-full bg-emerald-400 px-6 py-3 text-sm font-bold text-slate-950 transition hover:bg-emerald-300"
-                >
-                  Start With Starter
-                </button>
-              </SignUpButton>
+              <Link
+                to="/sign-up"
+                onClick={() => {
+                  trackEvent('landing_start_with_starter_clicked', { plan_key: 'starter' });
+                  storePendingCheckoutPlan('starter');
+                }}
+                className="rounded-full bg-emerald-400 px-6 py-3 text-sm font-bold text-slate-950 transition hover:bg-emerald-300"
+              >
+                Start With Starter
+              </Link>
               <a
                 href="#library"
                 className="rounded-full border border-white/15 bg-white/5 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
@@ -458,52 +517,66 @@ function Landing() {
       </section>
       */}
 
-      <section id="features" className="border-b border-white/8 bg-black py-16">
+      {/* Native publishing — post across platforms */}
+      <section id="features" className="border-b border-white/8 bg-[#030303] py-20">
         <div className="mx-auto w-full max-w-[1280px] px-4 md:px-6">
           <div className="mx-auto max-w-3xl text-center">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Why teams use it</p>
-            <h2 className="mt-2 text-4xl font-semibold leading-tight md:text-5xl">A clearer value proposition for creative research and planning.</h2>
-            <p className="mt-3 text-base text-slate-400">
-              ViralAdLibrary helps marketers move from inspiration to action with searchable examples, AI guidance, and faster reporting.
+            <p className="text-[11px] uppercase tracking-[0.18em] text-emerald-300/90">Publish</p>
+            <h2 className="mt-3 text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
+              Post across every social platform
+            </h2>
+            <p className="mt-4 text-base leading-7 text-slate-400 md:text-lg">
+              Connect accounts and publish the same winning creative to TikTok, Instagram Reels, YouTube Shorts, and LinkedIn.
             </p>
           </div>
 
-          <div className="mt-8 grid gap-4 md:grid-cols-[1.05fr_1fr_1.05fr]">
-            <article className="group relative min-h-[420px] overflow-hidden rounded-sm border border-white/10">
-              <img src={FEATURE_BLOCKS[0].image} alt={FEATURE_BLOCKS[0].title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/10" />
-              <div className="absolute bottom-0 p-5">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-300">Team Workflow</p>
-                <h3 className="mt-2 text-2xl font-semibold">{FEATURE_BLOCKS[0].title}</h3>
-                <p className="mt-2 text-sm text-slate-200">{FEATURE_BLOCKS[0].text}</p>
-              </div>
-            </article>
+          <CrossPlatformPublishVisual />
+        </div>
+      </section>
 
-            <div className="grid gap-4">
-              {[FEATURE_BLOCKS[1], FEATURE_BLOCKS[2]].map((item, index) => (
-                <article key={item.title} className="group relative min-h-[202px] overflow-hidden rounded-sm border border-white/10">
-                  <img src={item.image} alt={item.title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/15" />
-                  <div className="absolute bottom-0 p-4">
-                    <p className="text-[10px] uppercase tracking-[0.16em] text-emerald-300">Benefit {index + 1}</p>
-                    <h3 className="mt-1 text-lg font-semibold">{item.title}</h3>
-                    <p className="mt-1 text-xs text-slate-200">{item.text}</p>
-                  </div>
-                </article>
-              ))}
+      {/* Content calendar — Fastlane-style mockup + copy */}
+      <section id="content-calendar" className="border-b border-white/8 bg-[#030303] py-16 md:py-24">
+        <div className="mx-auto grid w-full max-w-[1280px] items-center gap-10 px-4 md:px-6 lg:grid-cols-2 lg:gap-0">
+          <div className="relative lg:pr-12">
+            <div className="absolute inset-0 overflow-hidden rounded-sm">
+              <img
+                src="https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=1400&q=80"
+                alt=""
+                className="h-full w-full scale-110 object-cover opacity-50 blur-md"
+              />
+              <div className="absolute inset-0 bg-gradient-to-br from-amber-900/40 via-transparent to-emerald-950/50" />
             </div>
-
-            <article className="group relative min-h-[420px] overflow-hidden rounded-sm border border-white/10">
-              <img src={FEATURE_BLOCKS[3].image} alt={FEATURE_BLOCKS[3].title} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/45 to-black/10" />
-              <div className="absolute bottom-0 p-5">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-emerald-300">Execution</p>
-                <h3 className="mt-2 text-2xl font-semibold">{FEATURE_BLOCKS[3].title}</h3>
-                <p className="mt-2 text-sm text-slate-200">{FEATURE_BLOCKS[3].text}</p>
-              </div>
-            </article>
+            <div className="relative p-4 sm:p-6 md:p-8">
+              <CalendarMockup />
+            </div>
           </div>
 
+          <div className="relative flex flex-col justify-center lg:border-l lg:border-emerald-400/50 lg:pl-12">
+            <p className="text-sm font-medium text-slate-500">03</p>
+            <h2 className="mt-3 text-4xl font-semibold leading-tight tracking-tight text-white md:text-5xl">
+              Fill up your calendar
+            </h2>
+            <p className="mt-4 max-w-md text-base leading-7 text-slate-400 md:text-lg">
+              Schedule content across TikTok, IG Reels, YT Shorts, and LinkedIn in one click.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* AI + Human UGC showcase — phone cards */}
+      <section id="ai-ugc" className="border-b border-white/8 bg-[#030303] py-20">
+        <div className="mx-auto w-full max-w-[1280px] px-4 md:px-6">
+          <div className="mx-auto max-w-3xl text-center">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-emerald-300/90">Create</p>
+            <h2 className="mt-3 text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
+              AI UGC, influencers & human creators
+            </h2>
+            <p className="mt-4 text-base leading-7 text-slate-400 md:text-lg">
+              Generate AI UGC, keep a consistent AI influencer, or pull from a human UGC library — then ship it.
+            </p>
+          </div>
+
+          <UgcShowcaseCarousel />
         </div>
       </section>
 
@@ -560,16 +633,15 @@ function Landing() {
                     {plan.cta}
                   </a>
                 ) : (
-                  <SignUpButton mode="modal">
-                    <button
-                      onClick={() => storePendingCheckoutPlan(plan.key)}
-                      className={`mt-8 w-full rounded-sm py-3 text-sm font-bold ${
-                        plan.popular ? 'bg-emerald-400 text-black hover:bg-emerald-300' : 'bg-white/10 text-white hover:bg-white/15'
-                      }`}
-                    >
-                      {plan.cta}
-                    </button>
-                  </SignUpButton>
+                  <Link
+                    to="/sign-up"
+                    onClick={() => storePendingCheckoutPlan(plan.key)}
+                    className={`mt-8 inline-flex w-full justify-center rounded-sm py-3 text-sm font-bold ${
+                      plan.popular ? 'bg-emerald-400 text-black hover:bg-emerald-300' : 'bg-white/10 text-white hover:bg-white/15'
+                    }`}
+                  >
+                    {plan.cta}
+                  </Link>
                 )}
               </div>
             ))}
@@ -647,14 +719,6 @@ function Landing() {
         </div>
       ) : null}
     </div>
-  );
-}
-
-function FeatureIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M5 12h14M12 5v14" strokeLinecap="round" />
-    </svg>
   );
 }
 
@@ -759,16 +823,15 @@ function OfferModal({ onClose }) {
         </div>
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-          <SignUpButton mode="modal">
-            <button
-              onClick={() => {
-                onClose();
-              }}
-              className="w-full rounded-full bg-emerald-400 px-4 py-3 text-sm font-bold text-slate-950 hover:bg-emerald-300"
-            >
-              Get Started
-            </button>
-          </SignUpButton>
+          <Link
+            to="/sign-up"
+            onClick={() => {
+              onClose();
+            }}
+            className="w-full rounded-full bg-emerald-400 px-4 py-3 text-center text-sm font-bold text-slate-950 hover:bg-emerald-300"
+          >
+            Get Started
+          </Link>
           <button
             type="button"
             onClick={onClose}
@@ -1057,5 +1120,422 @@ function inferNicheFromText(value) {
   return 'Featured';
 }
 
-export default Landing;
+function CrossPlatformPublishVisual() {
+  return (
+    <div className="mt-14">
+      <div className="relative mx-auto flex max-w-[720px] justify-center px-2 py-8 md:px-10 md:py-12">
+        <div className="pointer-events-none absolute left-1/2 top-1/2 h-[70%] w-[55%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-emerald-400/20 blur-[70px]" />
 
+        <div className="relative z-10 w-[min(100%,280px)] sm:w-[300px]">
+          <div className="relative overflow-hidden rounded-[28px] border border-white/10 shadow-[0_0_60px_rgba(16,185,129,0.28)]">
+            <div className="relative aspect-[9/16]">
+              <img
+                src="https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?auto=format&fit=crop&w=900&q=80"
+                alt="Cross-posted creative example"
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-b from-black/25 via-transparent to-black/55" />
+              <p className="absolute inset-x-5 top-[42%] -translate-y-1/2 text-center text-xl font-bold leading-snug text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.85)] sm:text-2xl">
+                3 years researching ads and NOW i find this??
+              </p>
+              <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-3 text-white/90">
+                <HandTapIcon />
+                <span className="h-5 w-px bg-white/30" />
+                <MenuLinesIcon />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {CROSS_POST_METRICS.map((metric) => (
+          <div
+            key={metric.id}
+            className={`absolute z-20 ${metric.position}`}
+          >
+            <PlatformMetricPill metric={metric} />
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+        <div className="flex -space-x-2">
+          {CROSS_POST_AVATARS.map((src) => (
+            <img
+              key={src}
+              src={src}
+              alt=""
+              className="h-9 w-9 rounded-full border-2 border-[#030303] object-cover"
+            />
+          ))}
+        </div>
+        <p className="text-sm text-slate-400">
+          Teams already researching with <span className="font-semibold text-white">ViralAdLibrary</span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PlatformMetricPill({ metric }) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#111]/95 px-3 py-2.5 shadow-[0_16px_40px_rgba(0,0,0,0.45)] backdrop-blur-md">
+      <PlatformBrandIcon platform={metric.id} />
+      <div className="flex items-center gap-3 text-xs font-semibold text-white sm:text-sm">
+        <span className="inline-flex items-center gap-1">
+          <EyeIcon />
+          {metric.views}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <HeartIcon />
+          {metric.likes}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function PlatformBrandIcon({ platform }) {
+  if (platform === 'tiktok') {
+    return (
+      <span className="grid h-8 w-8 place-items-center rounded-xl bg-white text-black">
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+          <path d="M14.5 3c.5 2.4 1.9 4 4.2 4.4v2.3c-1.5-.1-2.9-.6-4-1.5v6.5a5.3 5.3 0 1 1-5.3-5.3c.3 0 .6 0 .9.1v2.5a2.8 2.8 0 1 0 2 2.7V3h2.2Z" />
+        </svg>
+      </span>
+    );
+  }
+  if (platform === 'youtube') {
+    return (
+      <span className="grid h-8 w-8 place-items-center rounded-xl bg-[#ff0033] text-white">
+        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+          <path d="M21.6 7.2a2.5 2.5 0 0 0-1.8-1.8C18.2 5 12 5 12 5s-6.2 0-7.8.4A2.5 2.5 0 0 0 2.4 7.2 26 26 0 0 0 2 12a26 26 0 0 0 .4 4.8 2.5 2.5 0 0 0 1.8 1.8C5.8 19 12 19 12 19s6.2 0 7.8-.4a2.5 2.5 0 0 0 1.8-1.8A26 26 0 0 0 22 12a26 26 0 0 0-.4-4.8ZM10 15.2V8.8L15.5 12 10 15.2Z" />
+        </svg>
+      </span>
+    );
+  }
+  return (
+    <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-[#f58529] via-[#dd2a7b] to-[#8134af] text-white">
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <rect x="3" y="3" width="18" height="18" rx="5" />
+        <circle cx="12" cy="12" r="4" />
+        <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+      </svg>
+    </span>
+  );
+}
+
+function HandTapIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M8 11V7.5a1.5 1.5 0 0 1 3 0V11" strokeLinecap="round" />
+      <path d="M11 10.5V6.8a1.5 1.5 0 0 1 3 0V11" strokeLinecap="round" />
+      <path d="M14 10.8V8.5a1.5 1.5 0 0 1 3 0V14c0 3-2 5-5 5H9.5C6.5 19 5 17 5 14.5V12a1.5 1.5 0 0 1 3 0v-1" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function MenuLinesIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M5 8h14M5 12h14M5 16h14" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function UgcShowcaseCarousel() {
+  const [index, setIndex] = useState(0);
+  const maxIndex = Math.max(0, UGC_SHOWCASE_CARDS.length - 3);
+  const visible = UGC_SHOWCASE_CARDS.slice(index, index + 3);
+
+  return (
+    <div className="relative mt-12">
+      <div className="grid gap-5 md:grid-cols-3">
+        {visible.map((card, cardIndex) => (
+          <UgcPhoneCard key={card.id} card={card} showArrows={cardIndex === 1} onPrev={() => setIndex((v) => Math.max(0, v - 1))} onNext={() => setIndex((v) => Math.min(maxIndex, v + 1))} />
+        ))}
+      </div>
+
+      <div className="mt-8 flex items-center justify-center gap-3">
+        <button
+          type="button"
+          aria-label="Previous showcase cards"
+          onClick={() => setIndex((v) => Math.max(0, v - 1))}
+          disabled={index === 0}
+          className="grid h-11 w-11 place-items-center rounded-full border border-white/15 bg-white/5 text-white disabled:opacity-35"
+        >
+          <ChevronIcon direction="left" />
+        </button>
+        <button
+          type="button"
+          aria-label="Next showcase cards"
+          onClick={() => setIndex((v) => Math.min(maxIndex, v + 1))}
+          disabled={index >= maxIndex}
+          className="grid h-11 w-11 place-items-center rounded-full border border-white/15 bg-white/5 text-white disabled:opacity-35"
+        >
+          <ChevronIcon direction="right" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function UgcPhoneCard({ card, showArrows = false, onPrev, onNext }) {
+  return (
+    <article className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[#111] shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
+      <div className="relative aspect-[9/16]">
+        <img src={card.image} alt={card.name} className="absolute inset-0 h-full w-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-transparent to-black/70" />
+
+        <div className="absolute left-4 right-4 top-4 z-10 flex items-center gap-2.5">
+          <img src={card.avatar} alt="" className="h-9 w-9 rounded-full object-cover ring-2 ring-white/30" />
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <p className="truncate text-sm font-semibold text-white">{card.name}</p>
+              <span className="text-xs text-white/70">({card.kind})</span>
+              <VerifiedBadge />
+            </div>
+          </div>
+        </div>
+
+        <div className="absolute inset-x-4 top-[42%] z-10 -translate-y-1/2">
+          {card.captionStyle === 'boxed' ? (
+            <div className="space-y-2">
+              {card.caption.split('(').map((part, i) => {
+                const text = i === 0 ? part.trim() : `(${part.trim()}`;
+                if (!text) return null;
+                return (
+                  <p
+                    key={`${card.id}-cap-${i}`}
+                    className="inline-block max-w-full rounded-md bg-white px-2.5 py-1.5 text-sm font-bold leading-snug text-black"
+                  >
+                    {text}
+                  </p>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-center text-lg font-semibold leading-snug text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
+              {card.caption}
+            </p>
+          )}
+        </div>
+
+        {showArrows ? (
+          <>
+            <button
+              type="button"
+              aria-label="Previous"
+              onClick={onPrev}
+              className="absolute left-2 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-white backdrop-blur-sm"
+            >
+              <ChevronIcon direction="left" />
+            </button>
+            <button
+              type="button"
+              aria-label="Next"
+              onClick={onNext}
+              className="absolute right-2 top-1/2 z-20 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-white backdrop-blur-sm"
+            >
+              <ChevronIcon direction="right" />
+            </button>
+          </>
+        ) : null}
+
+        <div className="absolute bottom-4 right-4 z-10 space-y-3 text-right text-white">
+          <div className="flex items-center justify-end gap-1.5 text-sm font-semibold">
+            <EyeIcon />
+            <span>{card.views}</span>
+          </div>
+          <div className="flex items-center justify-end gap-1.5 text-sm font-semibold">
+            <HeartIcon />
+            <span>{card.likes}</span>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function VerifiedBadge() {
+  return (
+    <span className="grid h-4 w-4 place-items-center rounded-full bg-[#1d9bf0] text-white">
+      <svg viewBox="0 0 12 12" className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M2.5 6.2 4.8 8.5 9.5 3.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
+  );
+}
+
+function HeartIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M12 20s-7-4.4-9.2-8.2C1 8.8 2.8 5.5 6.2 5.1c2-.2 3.6.9 4.8 2.3 1.2-1.4 2.8-2.5 4.8-2.3 3.4.4 5.2 3.7 3.4 6.7C19 15.6 12 20 12 20Z" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ direction = 'right' }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={`h-4 w-4 ${direction === 'left' ? 'rotate-180' : ''}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+const CALENDAR_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const CALENDAR_POSTS = {
+  1: [{ platform: 'tiktok', label: 'TikTok Video', time: '1:00 PM' }],
+  2: [
+    { platform: 'youtube', label: 'YouTube Shorts', time: '11:30 AM' },
+    { platform: 'instagram', label: 'IG Reel', time: '4:15 PM' },
+  ],
+  3: [{ platform: 'tiktok', label: 'TikTok Video', time: '9:00 AM' }],
+  4: [
+    { platform: 'linkedin', label: 'LinkedIn Post', time: '10:00 AM' },
+    { platform: 'youtube', label: 'YouTube Shorts', time: '2:45 PM' },
+  ],
+  5: [{ platform: 'instagram', label: 'IG Reel', time: '6:00 PM' }],
+  6: [
+    { platform: 'tiktok', label: 'TikTok Video', time: '12:00 PM' },
+    { platform: 'youtube', label: 'YouTube Shorts', time: '3:30 PM' },
+  ],
+  7: [{ platform: 'instagram', label: 'IG Reel', time: '5:00 PM' }],
+  8: [
+    { platform: 'tiktok', label: 'TikTok Video', time: '8:30 AM' },
+    { platform: 'linkedin', label: 'LinkedIn Post', time: '1:00 PM' },
+  ],
+  9: [{ platform: 'youtube', label: 'YouTube Shorts', time: '4:00 PM' }],
+  10: [
+    { platform: 'instagram', label: 'IG Reel', time: '11:00 AM' },
+    { platform: 'tiktok', label: 'TikTok Video', time: '7:00 PM' },
+  ],
+  11: [{ platform: 'youtube', label: 'YouTube Shorts', time: '2:00 PM' }],
+  12: [
+    { platform: 'tiktok', label: 'TikTok Video', time: '10:30 AM' },
+    { platform: 'instagram', label: 'IG Reel', time: '3:00 PM' },
+  ],
+  13: [{ platform: 'linkedin', label: 'LinkedIn Post', time: '9:15 AM' }],
+  14: [
+    { platform: 'youtube', label: 'YouTube Shorts', time: '1:45 PM' },
+    { platform: 'tiktok', label: 'TikTok Video', time: '5:30 PM' },
+  ],
+};
+
+const PLATFORM_STYLES = {
+  tiktok: 'bg-neutral-100 text-neutral-800',
+  youtube: 'bg-rose-50 text-rose-700',
+  instagram: 'bg-sky-50 text-sky-700',
+  linkedin: 'bg-blue-50 text-blue-700',
+};
+
+function CalendarMockup() {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-[#f4f4f5] shadow-[0_28px_80px_rgba(0,0,0,0.45)]">
+      <div className="flex items-center justify-between border-b border-black/5 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="grid h-7 w-7 place-items-center rounded-md bg-white text-neutral-700 shadow-sm">
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="5" width="18" height="16" rx="2" />
+              <path d="M8 3v4M16 3v4M3 10h18" />
+            </svg>
+          </span>
+          <p className="text-sm font-semibold text-neutral-900">March 2026</p>
+        </div>
+        <div className="flex items-center gap-3 text-xs font-semibold text-neutral-600">
+          <span className="inline-flex items-center gap-1.5">
+            <CalendarStatIcon kind="check" /> 19
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <CalendarStatIcon kind="hot" /> 6
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <CalendarStatIcon kind="stack" /> 67
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 border-b border-black/5 bg-white/70 px-2 py-2 text-center text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+        {CALENDAR_DAYS.map((day) => (
+          <span key={day}>{day}</span>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-px bg-black/5 p-px">
+        {Array.from({ length: 14 }, (_, index) => {
+          const day = index + 1;
+          const posts = CALENDAR_POSTS[day] || [];
+          return (
+            <div key={day} className="min-h-[88px] bg-[#f7f7f8] p-1.5 sm:min-h-[104px]">
+              <p className="mb-1 text-[10px] font-semibold text-neutral-400">{day}</p>
+              <div className="space-y-1">
+                {posts.map((post) => (
+                  <div
+                    key={`${day}-${post.label}-${post.time}`}
+                    className={`rounded-md px-1.5 py-1 ${PLATFORM_STYLES[post.platform]}`}
+                  >
+                    <p className="truncate text-[9px] font-semibold leading-tight sm:text-[10px]">{post.label}</p>
+                    <p className="text-[8px] opacity-70 sm:text-[9px]">{post.time}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="pointer-events-none absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-4 rounded-full border border-white/60 bg-white/80 px-4 py-2 text-xs font-semibold text-neutral-700 shadow-lg backdrop-blur">
+        <span className="inline-flex items-center gap-1.5">
+          <CalendarStatIcon kind="check" /> 19
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <CalendarStatIcon kind="hot" /> 6
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <CalendarStatIcon kind="stack" /> 67
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function CalendarStatIcon({ kind }) {
+  if (kind === 'check') {
+    return (
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-emerald-600" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M3.5 8.5 6.5 11.5 12.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (kind === 'hot') {
+    return (
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-orange-500" fill="currentColor">
+        <path d="M8 1.5c.4 1.8-.4 3 1 4.4 1.2 1.2 2 2.4 2 4 0 2.1-1.6 3.6-3.5 3.6S4 12 4 9.9c0-1.5.7-2.7 1.7-3.9.7-.8 1.3-1.7 1.5-2.9.1-.5.4-1.1.8-1.6Z" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-neutral-500" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <rect x="2.5" y="3.5" width="11" height="3" rx="0.8" />
+      <rect x="2.5" y="7.5" width="11" height="3" rx="0.8" />
+      <rect x="2.5" y="11.5" width="11" height="2" rx="0.8" />
+    </svg>
+  );
+}
+
+export default Landing;

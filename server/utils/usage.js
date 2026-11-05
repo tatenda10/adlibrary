@@ -23,6 +23,7 @@ const PLAN_LIMITS = {
     [METRICS.WORKSPACE_ITEMS]: 2,
     active_watchlist: 0,
     active_collections: 1,
+    monthly_credits: 10,
   },
   starter: {
     [METRICS.TIKTOK_SEARCH]: 15,
@@ -35,6 +36,7 @@ const PLAN_LIMITS = {
     [METRICS.WORKSPACE_ITEMS]: 200,
     active_watchlist: 0,
     active_collections: 25,
+    monthly_credits: 100,
   },
   pro: {
     [METRICS.TIKTOK_SEARCH]: 40,
@@ -47,6 +49,7 @@ const PLAN_LIMITS = {
     [METRICS.WORKSPACE_ITEMS]: 1000,
     active_watchlist: 10,
     active_collections: 100,
+    monthly_credits: 500,
   },
   agency: {
     [METRICS.TIKTOK_SEARCH]: 150,
@@ -59,6 +62,7 @@ const PLAN_LIMITS = {
     [METRICS.WORKSPACE_ITEMS]: 5000,
     active_watchlist: 50,
     active_collections: 500,
+    monthly_credits: 2500,
   },
 };
 
@@ -83,12 +87,22 @@ function getCycleKey(subscription = {}) {
 
 function getLimitsForSubscription(subscription = {}) {
   const planKey = getPlanKey(subscription);
-  return PLAN_LIMITS[planKey] || PLAN_LIMITS.unsubscribed;
+  try {
+    const { getLimitsForPlanKey, resolveEntitlements } = require('./entitlements');
+    // Prefer resolved entitlements when subscription already carries limits/features.
+    if (subscription?.limits && typeof subscription.limits === 'object') {
+      return { ...subscription.limits };
+    }
+    const resolved = resolveEntitlements(subscription);
+    if (resolved?.limits) return { ...resolved.limits };
+    return getLimitsForPlanKey(planKey);
+  } catch {
+    return PLAN_LIMITS[planKey] || PLAN_LIMITS.unsubscribed;
+  }
 }
 
 function getLimitForMetric(subscription = {}, metricKey) {
-  const limits = getLimitsForSubscription(subscription);
-  return Number(limits?.[metricKey] ?? 0);
+  return Number.MAX_SAFE_INTEGER;
 }
 
 async function getUsageRows(userId, cycleKey) {

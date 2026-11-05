@@ -25,6 +25,7 @@ const railItems = [
   { key: 'analytics', to: '/analytics', label: 'Analytics', icon: AnalyticsIcon },
   { key: 'onboarding', to: '/onboarding', label: 'Onboarding', icon: OnboardingIcon },
   { key: 'incidents', to: '/incidents', label: 'Incidents', icon: IncidentsIcon },
+  { key: 'plans', to: '/plans', label: 'Plans', icon: SettingsIcon },
   { key: 'settings', to: '/settings', label: 'Settings', icon: SettingsIcon },
 ];
 
@@ -38,9 +39,10 @@ const productNav = [
   { to: '/analytics', label: 'Analytics', description: 'Events, funnels, and navigation.' },
   { to: '/onboarding', label: 'Onboarding', description: 'Brand and audience data from signup flow.' },
   { to: '/incidents', label: 'Incidents', description: 'API failures and empty scrapes.' },
+  { to: '/plans', label: 'Plans', description: 'Feature access and usage limits per plan.' },
 ];
 
-const PRODUCT_SECTIONS = new Set(['users', 'analytics', 'onboarding', 'incidents']);
+const PRODUCT_SECTIONS = new Set(['users', 'analytics', 'onboarding', 'incidents', 'plans']);
 
 const sectionMeta = {
   dashboard: {
@@ -72,6 +74,11 @@ const sectionMeta = {
     eyebrow: 'Reliability',
     title: 'Incidents',
     description: 'API failures, empty scrapes, and unhealthy Apify runs with user attribution.',
+  },
+  plans: {
+    eyebrow: 'Billing',
+    title: 'Plans & entitlements',
+    description: 'Control which features and limits each plan unlocks.',
   },
   settings: {
     eyebrow: 'Platform',

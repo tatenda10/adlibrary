@@ -1,7 +1,17 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const crypto = require('crypto');
+const fs = require('fs/promises');
+const path = require('path');
 const { AD_COPY_GUIDELINES } = require('../utils/adCopyGuidelines');
 const { loadMarketingSkill } = require('../utils/marketingSkills');
 const { crawlHomepageForBrief, crawlWebsiteForAudit } = require('../utils/websiteAudit');
+const {
+  CREDIT_ACTIONS,
+  getCreditSummary,
+  refundReservedCredits,
+  reserveCredits,
+  spendReservedCredits,
+} = require('../utils/credits');
 
 const PRODUCT_TYPE_VALUES = new Set([
   'saas_app',
@@ -24,6 +34,9 @@ const CATEGORY_VALUES = new Set([
   'food',
   'other',
 ]);
+
+const VIDEO_DURATION_VALUES = new Set([5, 10, 15, 30]);
+const GENERATED_VIDEO_ROOT = path.join(__dirname, '..', 'uploads', 'generated-videos');
 
 let cachedModelId = null;
 
@@ -610,10 +623,681 @@ Return STRICT JSON only:
   }
 }
 
+function pickGeminiImagePart(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  if (payload.output_image?.data) return payload.output_image;
+  if (payload.outputImage?.data) return payload.outputImage;
+
+  const candidates = [
+    ...(Array.isArray(payload.output) ? payload.output : []),
+    ...(Array.isArray(payload.candidates) ? payload.candidates : []),
+  ];
+
+  for (const candidate of candidates) {
+    const parts = [
+      ...(Array.isArray(candidate?.content?.parts) ? candidate.content.parts : []),
+      ...(Array.isArray(candidate?.parts) ? candidate.parts : []),
+      ...(Array.isArray(candidate?.content) ? candidate.content : []),
+    ];
+    const imagePart = parts.find((part) => part?.inlineData?.data || part?.inline_data?.data || part?.data);
+    if (imagePart) {
+      return imagePart.inlineData || imagePart.inline_data || imagePart;
+    }
+  }
+
+  return null;
+}
+
+function buildStaticAdImagePrompt({ imagePrompt, concept = {}, brief = {} }) {
+  return [
+    imagePrompt,
+    '',
+    'Generate one finished paid social static ad image. Keep text readable. Do not add fake logos, fake reviews, fake awards, or unverifiable claims.',
+    concept?.headline ? `Headline: ${concept.headline}` : '',
+    brief?.productName ? `Brand/product: ${brief.productName}` : '',
+  ].filter(Boolean).join('\n');
+}
+
+function makeImageProviderError(provider, message, status = 500, fallbackAllowed = true) {
+  const error = new Error(message || `${provider} image generation failed.`);
+  error.provider = provider;
+  error.status = status;
+  error.fallbackAllowed = fallbackAllowed;
+  return error;
+}
+
+function shouldFallbackOnImageError(error) {
+  if (!error) return true;
+  if (error.fallbackAllowed === false) return false;
+  const status = Number(error.status || error.statusCode || 0);
+  const message = String(error.message || '').toLowerCase();
+  if (status === 400 && /(safety|policy|blocked|prohibited|unsafe|content)/i.test(message)) {
+    return false;
+  }
+  if (status === 401 || status === 403) return false;
+  return true;
+}
+
+function openAiSizeFromAspectRatio(aspectRatio) {
+  if (aspectRatio === '16:9') return '1536x1024';
+  if (aspectRatio === '4:5' || aspectRatio === '9:16') return '1024x1536';
+  return '1024x1024';
+}
+
+async function generateGeminiStaticAdImage({ prompt, aspectRatio, imageSize, concept, brief }) {
+  if (!process.env.GEMINI_API_KEY) {
+    throw makeImageProviderError('gemini', 'GEMINI_API_KEY is not configured.', 500, true);
+  }
+
+  const model = process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image';
+  const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+    method: 'POST',
+    headers: {
+      'x-goog-api-key': process.env.GEMINI_API_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      input: [
+        {
+          type: 'text',
+          text: buildStaticAdImagePrompt({ imagePrompt: prompt, concept, brief }),
+        },
+      ],
+      response_format: {
+        type: 'image',
+        mime_type: 'image/jpeg',
+        aspect_ratio: aspectRatio,
+        image_size: imageSize,
+      },
+    }),
+  });
+
+  const rawText = await response.text();
+  let data = null;
+  try {
+    data = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const message = data?.error?.message || rawText || `Gemini image generation failed with ${response.status}`;
+    throw makeImageProviderError('gemini', message, response.status, true);
+  }
+
+  const image = pickGeminiImagePart(data);
+  const base64 = image?.data;
+  const mimeType = image?.mime_type || image?.mimeType || 'image/jpeg';
+  if (!base64) {
+    throw makeImageProviderError('gemini', 'Gemini did not return image data.', 500, true);
+  }
+
+  return {
+    image: {
+      dataUrl: `data:${mimeType};base64,${base64}`,
+      mimeType,
+    },
+    provider: 'gemini',
+    model,
+  };
+}
+
+async function generateOpenAiStaticAdImage({ prompt, aspectRatio, concept, brief }) {
+  if (!process.env.OPENAI_API_KEY) {
+    throw makeImageProviderError('openai', 'OPENAI_API_KEY is not configured.', 500, true);
+  }
+
+  const model = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
+  const response = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      prompt: buildStaticAdImagePrompt({ imagePrompt: prompt, concept, brief }),
+      n: 1,
+      size: openAiSizeFromAspectRatio(aspectRatio),
+      quality: process.env.OPENAI_IMAGE_QUALITY || 'medium',
+      output_format: 'jpeg',
+    }),
+  });
+
+  const rawText = await response.text();
+  let data = null;
+  try {
+    data = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const message = data?.error?.message || rawText || `OpenAI image generation failed with ${response.status}`;
+    throw makeImageProviderError('openai', message, response.status, false);
+  }
+
+  const base64 = data?.data?.[0]?.b64_json;
+  if (!base64) {
+    throw makeImageProviderError('openai', 'OpenAI did not return image data.', 500, false);
+  }
+
+  return {
+    image: {
+      dataUrl: `data:image/jpeg;base64,${base64}`,
+      mimeType: 'image/jpeg',
+    },
+    provider: 'openai',
+    model,
+  };
+}
+
+async function generateStaticAdImageWithFallback(payload) {
+  const providers = String(process.env.IMAGE_PROVIDER_ORDER || 'gemini,openai')
+    .split(',')
+    .map((provider) => provider.trim().toLowerCase())
+    .filter(Boolean);
+  const chain = providers.length ? providers : ['gemini', 'openai'];
+  const attempts = [];
+
+  for (const provider of chain) {
+    try {
+      const result = provider === 'openai'
+        ? await generateOpenAiStaticAdImage(payload)
+        : await generateGeminiStaticAdImage(payload);
+      return {
+        ...result,
+        fallbackUsed: attempts.length > 0,
+        attempts,
+      };
+    } catch (error) {
+      attempts.push({
+        provider: error.provider || provider,
+        status: error.status || 500,
+        message: error.message,
+      });
+      if (!shouldFallbackOnImageError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  const lastAttempt = attempts[attempts.length - 1];
+  throw makeImageProviderError(
+    lastAttempt?.provider || 'image',
+    lastAttempt?.message || 'All image providers failed.',
+    lastAttempt?.status || 500,
+    false
+  );
+}
+
+function safeUserPath(userId) {
+  return String(userId || 'user').replace(/[^a-z0-9_-]+/gi, '_').slice(0, 80);
+}
+
+function getFalApiKey() {
+  return process.env.FAL_KEY || process.env.FAL_API_KEY || '';
+}
+
+function getFalVideoEndpoint() {
+  return String(process.env.FAL_VIDEO_ENDPOINT || 'fal-ai/kling-video/v3/pro/text-to-video').replace(/^\/+|\/+$/g, '');
+}
+
+function getHiggsfieldApiKey() {
+  return process.env.HIGGSFIELD_API_KEY || process.env.HF_API_KEY || '';
+}
+
+function getHiggsfieldVideoEndpoint() {
+  return String(process.env.HIGGSFIELD_VIDEO_ENDPOINT || 'fal-ai/kling-video/v3/pro/text-to-video').replace(/^\/+|\/+$/g, '');
+}
+
+function getVideoProviderOrder() {
+  const configured = String(process.env.VIDEO_PROVIDER_ORDER || 'higgsfield,fal')
+    .split(',')
+    .map((provider) => provider.trim().toLowerCase())
+    .filter(Boolean);
+  return configured.length ? configured : ['higgsfield', 'fal'];
+}
+
+function getVideoCreditCost(durationSec) {
+  const perSecond = Math.max(1, Number(process.env.VIDEO_CREDIT_COST_PER_SECOND || 6));
+  return Math.max(1, Math.ceil(durationSec * perSecond));
+}
+
+function pickVideoUrl(result) {
+  const candidates = [
+    result?.video?.url,
+    result?.video_url,
+    result?.url,
+    result?.output?.video?.url,
+    result?.output?.video_url,
+  ];
+  const found = candidates.find((value) => typeof value === 'string' && /^https?:\/\//i.test(value));
+  if (found) return found;
+  if (Array.isArray(result?.videos)) {
+    const video = result.videos.find((item) => item?.url);
+    if (video?.url) return video.url;
+  }
+  return '';
+}
+
+const pickFalVideoUrl = pickVideoUrl;
+
+async function falRequest(pathname, { method = 'GET', body } = {}) {
+  const apiKey = getFalApiKey();
+  if (!apiKey) {
+    const error = new Error('FAL_KEY is not configured.');
+    error.status = 500;
+    throw error;
+  }
+
+  const response = await fetch(`https://queue.fal.run/${pathname}`, {
+    method,
+    headers: {
+      Authorization: `Key ${apiKey}`,
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { raw: text };
+  }
+
+  if (!response.ok) {
+    const message = data?.detail || data?.message || data?.error || text || `fal request failed (${response.status})`;
+    const error = new Error(Array.isArray(message) ? JSON.stringify(message) : String(message));
+    error.status = response.status;
+    error.payload = data;
+    throw error;
+  }
+
+  return data || {};
+}
+
+async function runFalVideoGeneration({ prompt, durationSec, aspectRatio, generateAudio }) {
+  const endpoint = getFalVideoEndpoint();
+  const payload = {
+    prompt,
+    duration: String(durationSec),
+    aspect_ratio: aspectRatio,
+    generate_audio: Boolean(generateAudio),
+  };
+
+  const submitted = await falRequest(endpoint, {
+    method: 'POST',
+    body: payload,
+  });
+
+  if (pickFalVideoUrl(submitted)) {
+    return { result: submitted, requestId: submitted.request_id || '', endpoint };
+  }
+
+  const requestId = submitted.request_id || submitted.requestId;
+  if (!requestId) {
+    throw new Error('fal did not return a request id.');
+  }
+
+  const maxAttempts = Math.max(1, Number(process.env.FAL_VIDEO_POLL_ATTEMPTS || 90));
+  const delayMs = Math.max(1000, Number(process.env.FAL_VIDEO_POLL_INTERVAL_MS || 3000));
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    const status = await falRequest(`${endpoint}/requests/${encodeURIComponent(requestId)}/status`);
+    const statusValue = String(status.status || status.state || '').toUpperCase();
+    if (statusValue === 'COMPLETED' || statusValue === 'SUCCEEDED' || status.completed === true) {
+      const result = await falRequest(`${endpoint}/requests/${encodeURIComponent(requestId)}`);
+      return { result, requestId, endpoint };
+    }
+    if (statusValue === 'FAILED' || statusValue === 'ERROR' || status.error) {
+      throw new Error(status.error || status.message || 'fal video generation failed.');
+    }
+  }
+
+  const error = new Error('fal video generation timed out. Try a shorter duration or retry later.');
+  error.status = 504;
+  throw error;
+}
+
+async function higgsfieldRequest(pathname, { method = 'GET', body } = {}) {
+  const apiKey = getHiggsfieldApiKey();
+  if (!apiKey) {
+    const error = new Error('HIGGSFIELD_API_KEY is not configured.');
+    error.status = 500;
+    throw error;
+  }
+
+  const response = await fetch(`https://api.higgsfield.ai/${pathname.replace(/^\/+/, '')}`, {
+    method,
+    headers: {
+      Authorization: `Key ${apiKey}`,
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = { raw: text };
+  }
+
+  if (!response.ok) {
+    const message = data?.detail || data?.message || data?.error || text || `Higgsfield request failed (${response.status})`;
+    const error = new Error(Array.isArray(message) ? JSON.stringify(message) : String(message));
+    error.status = response.status;
+    error.payload = data;
+    throw error;
+  }
+
+  return data || {};
+}
+
+async function runHiggsfieldVideoGeneration({ prompt, durationSec, aspectRatio, generateAudio }) {
+  if (durationSec > 15) {
+    const error = new Error('Higgsfield Kling 3.0 Pro supports up to 15 seconds per request.');
+    error.status = 400;
+    error.skipProvider = true;
+    throw error;
+  }
+
+  const endpoint = getHiggsfieldVideoEndpoint();
+  const payload = {
+    prompt,
+    duration: durationSec,
+    aspect_ratio: aspectRatio,
+    resolution: process.env.HIGGSFIELD_VIDEO_RESOLUTION || '720p',
+    generate_audio: Boolean(generateAudio),
+  };
+
+  const submitted = await higgsfieldRequest(endpoint, {
+    method: 'POST',
+    body: payload,
+  });
+
+  if (pickVideoUrl(submitted)) {
+    return { result: submitted, requestId: submitted.request_id || '', endpoint, provider: 'higgsfield' };
+  }
+
+  const requestId = submitted.request_id || submitted.requestId;
+  if (!requestId) {
+    throw new Error('Higgsfield did not return a request id.');
+  }
+
+  const maxAttempts = Math.max(1, Number(process.env.HIGGSFIELD_VIDEO_POLL_ATTEMPTS || 90));
+  const delayMs = Math.max(1000, Number(process.env.HIGGSFIELD_VIDEO_POLL_INTERVAL_MS || 3000));
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    const status = await higgsfieldRequest(`requests/${encodeURIComponent(requestId)}/status`);
+    const statusValue = String(status.status || status.state || '').toLowerCase();
+    if (statusValue === 'completed' || statusValue === 'succeeded' || status.completed === true) {
+      return { result: status, requestId, endpoint, provider: 'higgsfield' };
+    }
+    if (['failed', 'error', 'nsfw', 'canceled', 'cancelled'].includes(statusValue) || status.error) {
+      throw new Error(status.error || status.message || `Higgsfield video generation ${statusValue || 'failed'}.`);
+    }
+  }
+
+  const error = new Error('Higgsfield video generation timed out. Try a shorter duration or retry later.');
+  error.status = 504;
+  throw error;
+}
+
+async function runVideoGenerationWithFallback(payload) {
+  const attempts = [];
+  for (const provider of getVideoProviderOrder()) {
+    try {
+      if (provider === 'higgsfield') {
+        const result = await runHiggsfieldVideoGeneration(payload);
+        return { ...result, attempts, fallbackUsed: attempts.length > 0 };
+      }
+      if (provider === 'fal') {
+        const result = await runFalVideoGeneration(payload);
+        return { ...result, provider: 'fal', attempts, fallbackUsed: attempts.length > 0 };
+      }
+      attempts.push({ provider, message: 'Unknown video provider.' });
+    } catch (error) {
+      attempts.push({
+        provider,
+        status: error.status || 500,
+        message: error.message,
+        skipped: Boolean(error.skipProvider),
+      });
+      if (error.skipProvider) continue;
+    }
+  }
+
+  const lastAttempt = attempts[attempts.length - 1];
+  const error = new Error(lastAttempt?.message || 'All video providers failed.');
+  error.status = lastAttempt?.status || 500;
+  error.attempts = attempts;
+  throw error;
+}
+
+async function saveRemoteVideo(videoUrl, userId) {
+  const response = await fetch(videoUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download generated video (${response.status}).`);
+  }
+  const contentType = response.headers.get('content-type') || '';
+  const ext = contentType.includes('webm') ? '.webm' : contentType.includes('quicktime') ? '.mov' : '.mp4';
+  const buffer = Buffer.from(await response.arrayBuffer());
+  const userFolder = safeUserPath(userId);
+  const dir = path.join(GENERATED_VIDEO_ROOT, userFolder);
+  await fs.mkdir(dir, { recursive: true });
+  const hash = crypto.createHash('sha256').update(`${videoUrl}:${Date.now()}:${Math.random()}`).digest('hex').slice(0, 24);
+  const fileName = `${hash}${ext}`;
+  await fs.writeFile(path.join(dir, fileName), buffer);
+  return `/uploads/generated-videos/${userFolder}/${fileName}`;
+}
+
+async function generateContentVideo(req, res) {
+  let creditReservation = null;
+  try {
+    const {
+      prompt = '',
+      duration = 5,
+      aspectRatio = '9:16',
+      generateAudio = false,
+      format = 'UGC Video',
+    } = req.body || {};
+
+    const videoPrompt = String(prompt || '').trim();
+    if (!videoPrompt) {
+      return res.status(400).json({ error: 'prompt is required' });
+    }
+
+    const durationSec = Number(duration);
+    if (!VIDEO_DURATION_VALUES.has(durationSec)) {
+      return res.status(400).json({ error: 'duration must be one of 5, 10, 15, or 30 seconds.' });
+    }
+
+    const safeAspectRatio = ['9:16', '16:9', '1:1'].includes(aspectRatio) ? aspectRatio : '9:16';
+    const creditAmount = getVideoCreditCost(durationSec);
+    const creditHold = await reserveCredits({
+      userId: req.user.id,
+      subscription: req.subscription,
+      actionKey: CREDIT_ACTIONS.VIDEO_GENERATION,
+      amount: creditAmount,
+      description: `Generate ${durationSec}s AI video`,
+      metadata: {
+        provider_order: getVideoProviderOrder(),
+        primary_model: getHiggsfieldVideoEndpoint(),
+        durationSec,
+        aspectRatio: safeAspectRatio,
+      },
+    });
+    creditReservation = creditHold.reservation;
+
+    const { result, requestId, endpoint, provider, attempts, fallbackUsed } = await runVideoGenerationWithFallback({
+      prompt: `${format ? `${format} ad. ` : ''}${videoPrompt}`,
+      durationSec,
+      aspectRatio: safeAspectRatio,
+      generateAudio,
+    });
+    const remoteVideoUrl = pickVideoUrl(result);
+    if (!remoteVideoUrl) {
+      throw new Error(`${provider || 'Video provider'} completed but did not return a video URL.`);
+    }
+
+    const localVideoUrl = await saveRemoteVideo(remoteVideoUrl, req.user.id);
+
+    if (creditReservation?.id) {
+      await spendReservedCredits({
+        userId: req.user.id,
+        reservationId: creditReservation.id,
+        description: `${durationSec}s AI video generated`,
+        metadata: {
+          provider,
+          endpoint,
+          requestId,
+          remoteVideoUrl,
+          localVideoUrl,
+          durationSec,
+          fallbackUsed: Boolean(fallbackUsed),
+        },
+      });
+    }
+
+    const credits = await getCreditSummary(req.user.id, req.subscription);
+    return res.json({
+      video: {
+        url: localVideoUrl,
+        remote_url: remoteVideoUrl,
+        duration: durationSec,
+        aspect_ratio: safeAspectRatio,
+        provider,
+        model: endpoint,
+        request_id: requestId,
+        fallback_used: Boolean(fallbackUsed),
+        attempts,
+      },
+      credits,
+    });
+  } catch (error) {
+    if (creditReservation?.id) {
+      try {
+        await refundReservedCredits({
+          userId: req.user.id,
+          reservationId: creditReservation.id,
+          description: 'AI video generation failed',
+          metadata: {
+            message: error.message || 'Unknown video generation error',
+          },
+        });
+      } catch (refundError) {
+        console.error('generateContentVideo credit refund error:', refundError);
+      }
+    }
+    console.error('generateContentVideo error:', error);
+    if (error.code === 'insufficient_credits' && error.payload) {
+      return res.status(error.status || 402).json(error.payload);
+    }
+    return res.status(error.status || 500).json({ error: error.message || 'Failed to generate video.' });
+  }
+}
+
+async function generateAdImage(req, res) {
+  let creditReservation = null;
+  try {
+    const {
+      prompt = '',
+      aspectRatio = '1:1',
+      imageSize = '1K',
+      concept = {},
+      brief = {},
+    } = req.body || {};
+
+    const imagePrompt = String(prompt || '').trim();
+    if (!imagePrompt) {
+      return res.status(400).json({ error: 'prompt is required' });
+    }
+
+    const allowedAspectRatios = new Set(['1:1', '4:5', '9:16', '16:9']);
+    const allowedImageSizes = new Set(['512', '1K', '2K', '4K']);
+    const safeAspectRatio = allowedAspectRatios.has(aspectRatio) ? aspectRatio : '1:1';
+    const safeImageSize = allowedImageSizes.has(imageSize) ? imageSize : '1K';
+
+    const creditHold = await reserveCredits({
+      userId: req.user.id,
+      subscription: req.subscription,
+      actionKey: CREDIT_ACTIONS.STATIC_AD_IMAGE,
+      description: 'Generate static ad image',
+      metadata: {
+        aspectRatio: safeAspectRatio,
+        imageSize: safeImageSize,
+      },
+    });
+    creditReservation = creditHold.reservation;
+
+    const result = await generateStaticAdImageWithFallback({
+      prompt: imagePrompt,
+      aspectRatio: safeAspectRatio,
+      imageSize: safeImageSize,
+      concept,
+      brief,
+    });
+
+    if (creditReservation?.id) {
+      await spendReservedCredits({
+        userId: req.user.id,
+        reservationId: creditReservation.id,
+        description: 'Static ad image generated',
+        metadata: {
+          provider: result.provider,
+          model: result.model,
+          fallbackUsed: Boolean(result.fallbackUsed),
+        },
+      });
+    }
+    const credits = await getCreditSummary(req.user.id, req.subscription);
+
+    return res.json({
+      image: result.image,
+      provider: result.provider,
+      model: result.model,
+      fallbackUsed: result.fallbackUsed,
+      attempts: result.attempts,
+      aspect_ratio: safeAspectRatio,
+      image_size: safeImageSize,
+      credits,
+    });
+  } catch (error) {
+    if (creditReservation?.id) {
+      try {
+        await refundReservedCredits({
+          userId: req.user.id,
+          reservationId: creditReservation.id,
+          description: 'Static ad image generation failed',
+          metadata: {
+            message: error.message || 'Unknown image generation error',
+          },
+        });
+      } catch (refundError) {
+        console.error('generateAdImage credit refund error:', refundError);
+      }
+    }
+    console.error('generateAdImage error:', error);
+    if (error.code === 'insufficient_credits' && error.payload) {
+      return res.status(error.status || 402).json(error.payload);
+    }
+    return res.status(error.status || 500).json({ error: error.message || 'Failed to generate ad image.' });
+  }
+}
+
 module.exports = {
   generateHookScript,
   generateFacebookAdCopy,
   extractProductFromWebsite,
   generateBulkCreative,
+  generateAdImage,
+  generateContentVideo,
 };
-

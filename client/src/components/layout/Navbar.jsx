@@ -1,4 +1,3 @@
-import { SignInButton, SignUpButton } from '@clerk/clerk-react';
 import { Link, useLocation } from 'react-router-dom';
 import logo from '../../assets/logo.png';
 
@@ -30,32 +29,14 @@ function Navbar() {
           </Link>
         </nav>
 
-        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-          <SignInButton mode="modal">
-            <button className="inline-flex items-center gap-1 rounded-full border border-emerald-200/35 px-2.5 py-2 text-xs font-semibold text-white hover:bg-emerald-900/35 sm:gap-2 sm:px-3 sm:text-sm">
-              <LoginIcon />
-              <span className="hidden sm:inline">Log in</span>
-            </button>
-          </SignInButton>
-          <SignUpButton mode="modal">
-            <button className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-950 shadow-[0_0_18px_rgba(37,211,102,0.45)] hover:bg-emerald-300 sm:gap-2 sm:px-4 sm:text-sm">
-              <CreateAccountIcon />
-              <span className="sm:hidden">Create</span>
-              <span className="hidden sm:inline">Create account</span>
-            </button>
-          </SignUpButton>
+        <div className="flex shrink-0 items-center">
+          <Link to="/sign-up" className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-emerald-400 px-3 py-2 text-xs font-bold text-slate-950 shadow-[0_0_18px_rgba(37,211,102,0.45)] hover:bg-emerald-300 sm:gap-2 sm:px-4 sm:text-sm">
+            <CreateAccountIcon />
+            <span>Get started for free</span>
+          </Link>
         </div>
       </div>
     </header>
-  );
-}
-
-function LoginIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="12" cy="8" r="3.2" />
-      <path d="M5.5 19c.8-3.1 3.6-5 6.5-5s5.7 1.9 6.5 5" strokeLinecap="round" />
-    </svg>
   );
 }
 

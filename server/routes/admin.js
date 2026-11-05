@@ -22,6 +22,11 @@ const {
   getAdminOnboardingProfileDetail,
 } = require('../controllers/adminOpsController');
 
+const {
+  getAdminEntitlements,
+  putAdminEntitlements,
+} = require('../controllers/adminEntitlementsController');
+
 const router = express.Router();
 
 router.post('/login', adminLogin);
@@ -37,6 +42,8 @@ router.get('/onboarding/:userId', adminAuth, getAdminOnboardingProfileDetail);
 router.get('/incidents/summary', adminAuth, getAdminIncidentsSummary);
 router.get('/incidents/:id', adminAuth, getAdminIncidentDetail);
 router.get('/incidents', adminAuth, getAdminIncidents);
+router.get('/entitlements', adminAuth, getAdminEntitlements);
+router.put('/entitlements', adminAuth, putAdminEntitlements);
 router.get('/articles', adminAuth, getAdminArticles);
 router.post('/articles', adminAuth, createAdminArticle);
 router.put('/articles/:id', adminAuth, updateAdminArticle);

@@ -7,6 +7,7 @@ const {
   getOnboardingStatus,
   extractWebsiteBrand,
   generateVoiceDraft,
+  enrichBrandProfile,
   previewBrandProfile,
   previewLandingWebsite,
 } = require('../controllers/onboardingController');
@@ -20,6 +21,7 @@ router.post('/', clerkAuth, upsertOnboardingProfile);
 router.patch('/', clerkAuth, patchOnboardingProfile);
 router.post('/extract', clerkAuth, extractWebsiteBrand);
 router.post('/generate-voice', clerkAuth, generateVoiceDraft);
+router.post('/enrich', clerkAuth, enrichBrandProfile);
 router.post('/preview', clerkAuth, previewBrandProfile);
 
 module.exports = router;

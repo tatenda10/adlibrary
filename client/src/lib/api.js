@@ -1,12 +1,12 @@
 import { getUserFacingError } from './userFacingError.js';
 
-// export const API_URL = (
-//    import.meta.env.VITE_API_URL ||
-//  import.meta.env.VITE_API_BASE_URL ||
-//  'http://localhost:5000'
-// ).replace(/\/+$/, '');
+export const API_URL = (
+   import.meta.env.VITE_API_URL ||
+ import.meta.env.VITE_API_BASE_URL ||
+ 'http://localhost:5000'
+).replace(/\/+$/, '');
 
-export const API_URL = 'https://viraladlibrary.space';
+//export const API_URL = 'https://viraladlibrary.space';
 
 let onAuthExpired = null;
 let authExpiredInFlight = false;
@@ -115,6 +115,9 @@ async function request(path, options = {}) {
     error.billing = data?.billing || data?.subscription || null;
     error.subscription = data?.subscription || data?.billing || null;
     error.usage = data?.usage || null;
+    error.credits = data?.credits || null;
+    error.credit_balance = data?.credit_balance;
+    error.required_credits = data?.required_credits;
     error.metric = data?.metric || '';
     error.upgrade_prompt = data?.upgrade_prompt || '';
     throw error;
@@ -131,7 +134,8 @@ export function isBillingOrQuotaError(err) {
     code === 'quota_exceeded' ||
     code === 'subscription_required' ||
     code === 'pro_required' ||
-    code === 'collection_limit_reached'
+    code === 'collection_limit_reached' ||
+    code === 'insufficient_credits'
   ) {
     return true;
   }
@@ -147,6 +151,7 @@ export function isBillingOrQuotaError(err) {
     combined.includes('workspace folder limit') ||
     combined.includes('saved item limit') ||
     combined.includes('usage limit reached') ||
+    combined.includes('not enough credits') ||
     combined.includes('billing cycle') ||
     combined.includes('upgrade your plan') ||
     combined.includes('add more videos') ||
@@ -582,6 +587,14 @@ export function generateOnboardingVoiceDraft(token, payload = {}) {
   });
 }
 
+export function enrichBrandProfile(token, payload = {}) {
+  return request('/api/onboarding/enrich', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+}
+
 export function previewOnboardingProfile(token, payload) {
   return request('/api/onboarding/preview', {
     method: 'POST',
@@ -633,11 +646,59 @@ export function generateBulkCreative(token, payload) {
   });
 }
 
+export function generateAdImage(token, payload) {
+  return request('/api/hooks/ad-image', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+}
+
+export function generateContentVideo(token, payload) {
+  return request('/api/hooks/video', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
+  });
+}
+
 export function extractProductFromWebsite(token, websiteUrl) {
   return request('/api/hooks/product-from-website', {
     method: 'POST',
     headers: authHeaders(token),
     body: JSON.stringify({ websiteUrl }),
+  });
+}
+
+export function getContentLibraryItems(token, params = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.platform) searchParams.set('platform', params.platform);
+  if (params.source) searchParams.set('source', params.source);
+  if (params.format) searchParams.set('format', params.format);
+  if (params.search) searchParams.set('search', params.search);
+  if (params.page) searchParams.set('page', String(params.page));
+  if (params.limit) searchParams.set('limit', String(params.limit));
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : '';
+  return request(`/api/content-library${suffix}`, {
+    headers: authHeaders(token),
+  });
+}
+
+export function getStaticAdExamples(params = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.category) searchParams.set('category', params.category);
+  if (params.search) searchParams.set('search', params.search);
+  if (params.page) searchParams.set('page', String(params.page));
+  if (params.limit) searchParams.set('limit', String(params.limit));
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : '';
+  return request(`/api/content-library/static-ad-examples${suffix}`);
+}
+
+export function importKarolaFacebookExamples(token, payload = {}) {
+  return request('/api/content-library/import/karola-facebook-examples', {
+    method: 'POST',
+    headers: authHeaders(token),
+    body: JSON.stringify(payload),
   });
 }
 
@@ -670,8 +731,11 @@ export function deleteSavedCroAudit(token, id) {
   });
 }
 
-export function getBillingStatus(token) {
-  return request('/api/billing/status', {
+export function getBillingStatus(token, options = {}) {
+  const params = new URLSearchParams();
+  if (options.subscriptionId) params.set('subscription_id', options.subscriptionId);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return request(`/api/billing/status${suffix}`, {
     headers: authHeaders(token),
   });
 }

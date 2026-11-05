@@ -57,8 +57,7 @@ function toArray(value) {
 
 function resolveFacebookResultLimit(subscription, requestedLimit, fallback = 40) {
   const paidLimit = clamp(requestedLimit, 1, 100, fallback);
-  if (subscription?.is_active) return paidLimit;
-  return Math.min(paidLimit, FREE_RESULT_LIMIT);
+  return paidLimit;
 }
 
 function arrayFromPaths(item, paths = []) {

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+﻿@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Italianno&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Handlee&display=swap');
@@ -61,7 +61,7 @@ body {
   font-family: 'Inter', sans-serif;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  font-size: small;
+  font-size: x-small;
   background: var(--app-bg);
   color: var(--app-text);
   position: relative;
@@ -520,6 +520,25 @@ body::after {
   to {
     transform: rotate(360deg);
   }
+}
+
+@keyframes unlock-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.unlock-review-marquee {
+  display: flex;
+  width: max-content;
+  animation: unlock-marquee 42s linear infinite;
+}
+
+.unlock-review-marquee:hover {
+  animation-play-state: paused;
 }
 
 /* Sonner toasts — match app dark panel */

@@ -6,6 +6,7 @@ const {
   generateBrandVoiceDraft,
   defaultChannelsForIndustry,
 } = require('../utils/onboardingWebsiteExtract');
+const { getSubscriptionByUserId } = require('../utils/billing');
 
 function extractJson(text) {
   const match = String(text || '').match(/\{[\s\S]*\}/);
@@ -55,7 +56,10 @@ Return STRICT JSON only with this exact shape:
   "value_props": ["benefit 1", "benefit 2", "benefit 3"],
   "content_pillars": ["pillar 1", "pillar 2", "pillar 3"],
   "ideal_customers": "short description of ideal customers",
-  "suggested_channels": ["tiktok", "instagram", "facebook", "youtube", "google_ads", "reddit"]
+  "suggested_channels": ["tiktok", "instagram", "facebook", "youtube", "google_ads", "reddit"],
+  "niche": "specific niche/category",
+  "competitors": ["competitor 1", "competitor 2", "competitor 3"],
+  "customer_segments": [{"name": "segment", "percent": 35}]
 }
 
 Onboarding data (from founder/marketer):
@@ -69,6 +73,8 @@ Rules:
 - Use concise, ad-ready wording.
 - value_props should be concrete benefits, max 8.
 - content_pillars are themes you could create many ads around, max 8.
+- competitors should be likely category competitors or alternatives; use best inference if the website does not name them.
+- customer_segments should add up to 100 when possible.
 - Do not include markdown or extra commentary.`;
 
   const url = 'https://api.anthropic.com/v1/messages';
@@ -114,6 +120,19 @@ Rules:
     suggested_channels: Array.isArray(parsed.suggested_channels)
       ? parsed.suggested_channels.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 8)
       : [],
+    niche: String(parsed.niche || '').trim(),
+    competitors: Array.isArray(parsed.competitors)
+      ? parsed.competitors.map((v) => String(v || '').trim()).filter(Boolean).slice(0, 8)
+      : [],
+    customer_segments: Array.isArray(parsed.customer_segments)
+      ? parsed.customer_segments
+          .map((item) => ({
+            name: String(item?.name || item?.segment || '').trim(),
+            percent: Number(item?.percent || item?.percentage || 0) || 0,
+          }))
+          .filter((item) => item.name)
+          .slice(0, 8)
+      : [],
   };
 }
 
@@ -138,12 +157,25 @@ async function refreshBrandProfileInBackground({ userId, onboarding }) {
       return;
     }
 
+    const existing = await getBrandProfileRow(userId);
+    const mergedPrefs = {
+      ...parsePreferences(existing?.preferences),
+      niche: profile.niche || parsePreferences(existing?.preferences).niche || '',
+      idealCustomers: profile.ideal_customers || existing?.target_audience || '',
+      suggestedChannelsText: (profile.suggested_channels || []).join(', '),
+      competitors: profile.competitors || [],
+      customerSegments: profile.customer_segments || [],
+    };
+
     await pool.query(
       `UPDATE brand_profiles
        SET story = ?, 
            tone = JSON_OBJECT('summary', ?),
            value_props = ?,
            content_pillars = ?,
+           target_audience = COALESCE(?, target_audience),
+           channels = ?,
+           preferences = ?,
            last_scraped_at = NOW()
        WHERE user_id = ?`,
       [
@@ -151,6 +183,9 @@ async function refreshBrandProfileInBackground({ userId, onboarding }) {
         profile.tone_summary,
         JSON.stringify(profile.value_props || []),
         JSON.stringify(profile.content_pillars || []),
+        profile.ideal_customers || null,
+        JSON.stringify(profile.suggested_channels || []),
+        JSON.stringify(mergedPrefs),
         userId,
       ]
     );
@@ -198,6 +233,18 @@ function buildPreferencesPayload(body = {}, existing = {}) {
   if (incoming.extracted != null) prefs.extracted = incoming.extracted;
   if (body.extracted != null) prefs.extracted = body.extracted;
   if (incoming.onboardingFlowVersion != null) prefs.onboardingFlowVersion = Number(incoming.onboardingFlowVersion) || incoming.onboardingFlowVersion;
+  if (incoming.idealCustomers != null) prefs.idealCustomers = String(incoming.idealCustomers || '').trim();
+  if (incoming.suggestedChannelsText != null) prefs.suggestedChannelsText = String(incoming.suggestedChannelsText || '').trim();
+  if (Array.isArray(incoming.competitors)) prefs.competitors = incoming.competitors.map((item) => String(item || '').trim()).filter(Boolean);
+  if (Array.isArray(incoming.customerSegments)) prefs.customerSegments = incoming.customerSegments;
+  if (incoming.brandSettings && typeof incoming.brandSettings === 'object') {
+    prefs.brandSettings = {
+      allowAiTools: Boolean(incoming.brandSettings.allowAiTools),
+      requireAiRefresh: Boolean(incoming.brandSettings.requireAiRefresh),
+      allowCollaboratorEditing: Boolean(incoming.brandSettings.allowCollaboratorEditing),
+      autoCopyToBriefs: Boolean(incoming.brandSettings.autoCopyToBriefs),
+    };
+  }
 
   return prefs;
 }
@@ -407,6 +454,13 @@ async function getOnboardingStatus(req, res) {
     }
 
     await ensureUser(req.user);
+    const subscription = await getSubscriptionByUserId(req.user.id).catch(() => null);
+    const paidPlans = new Set(['starter', 'pro', 'agency']);
+    const paidPlan = String(subscription?.plan_key || subscription?.current_plan || '').toLowerCase();
+    const hasPaidAccess =
+      Boolean(subscription?.is_active || subscription?.is_paid) ||
+      paidPlans.has(paidPlan) ||
+      Boolean(subscription?.dodo_subscription_id || subscription?.dodo_customer_id);
 
     const [rows] = await pool.query(
       `SELECT brand_name, website_url, story, onboarding_step, onboarding_completed, preferences
@@ -419,12 +473,14 @@ async function getOnboardingStatus(req, res) {
       console.log('[onboarding] status result', {
         userId: req.user.id,
         state: 'no_profile',
+        hasPaidAccess,
       });
       return res.json({
-        completed: false,
+        completed: hasPaidAccess,
         onboardingStep: 1,
         hasProfile: false,
         hasInsights: false,
+        hasPaidAccess,
       });
     }
 
@@ -437,10 +493,11 @@ async function getOnboardingStatus(req, res) {
     const hasInsights = row.story && String(row.story).trim();
 
     const status = {
-      completed: Boolean(Number(row.onboarding_completed)),
+      completed: Boolean(Number(row.onboarding_completed)) || hasPaidAccess || Boolean(hasBasicProfile),
       onboardingStep: Number(row.onboarding_step) || 1,
       hasProfile: Boolean(hasBasicProfile),
       hasInsights: Boolean(hasInsights),
+      hasPaidAccess,
       niche: prefs.niche || '',
       audienceRole: prefs.audienceRole || '',
       countries: Array.isArray(prefs.countries) ? prefs.countries : [],
@@ -547,6 +604,95 @@ async function generateVoiceDraft(req, res) {
   } catch (error) {
     console.error('generateVoiceDraft error:', error);
     return res.status(500).json({ error: error.message || 'Failed to generate brand voice draft' });
+  }
+}
+
+async function enrichBrandProfile(req, res) {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    await ensureUser(req.user);
+
+    const existing = await getBrandProfileRow(req.user.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Brand profile not found' });
+    }
+
+    const websiteUrl = req.body?.websiteUrl || existing.website_url;
+    if (!websiteUrl || !String(websiteUrl).trim()) {
+      return res.status(400).json({ error: 'Website URL is required before AI enrichment' });
+    }
+
+    let normalizedUrl;
+    try {
+      normalizedUrl = normalizeWebsiteUrl(websiteUrl);
+    } catch (error) {
+      return res.status(400).json({ error: error.message || 'Invalid website URL' });
+    }
+
+    const websiteContent = await runWebsiteCrawl(normalizedUrl);
+    const prefs = parsePreferences(existing.preferences);
+    const profile = await buildBrandProfileWithClaude(
+      {
+        brandName: existing.brand_name,
+        websiteUrl: normalizedUrl,
+        industry: existing.industry,
+        targetAudience: existing.target_audience,
+        preferences: prefs,
+      },
+      websiteContent
+    );
+
+    const mergedPrefs = {
+      ...prefs,
+      niche: profile.niche || prefs.niche || '',
+      idealCustomers: profile.ideal_customers || existing.target_audience || prefs.idealCustomers || '',
+      suggestedChannelsText: (profile.suggested_channels || []).join(', '),
+      competitors: profile.competitors || [],
+      customerSegments: profile.customer_segments || [],
+    };
+
+    await pool.query(
+      `UPDATE brand_profiles
+       SET website_url = ?,
+           story = ?,
+           tone = JSON_OBJECT('summary', ?),
+           value_props = ?,
+           content_pillars = ?,
+           target_audience = COALESCE(?, target_audience),
+           channels = ?,
+           preferences = ?,
+           last_scraped_at = NOW(),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = ?`,
+      [
+        normalizedUrl,
+        profile.story,
+        profile.tone_summary,
+        JSON.stringify(profile.value_props || []),
+        JSON.stringify(profile.content_pillars || []),
+        profile.ideal_customers || null,
+        JSON.stringify(profile.suggested_channels || []),
+        JSON.stringify(mergedPrefs),
+        req.user.id,
+      ]
+    );
+
+    const row = await getBrandProfileRow(req.user.id);
+    return res.json({
+      ...row,
+      goals: parsePreferences(row.goals),
+      channels: parsePreferences(row.channels),
+      preferences: parsePreferences(row.preferences),
+      value_props: parsePreferences(row.value_props),
+      content_pillars: parsePreferences(row.content_pillars),
+      tone: parsePreferences(row.tone),
+    });
+  } catch (error) {
+    console.error('enrichBrandProfile error:', error);
+    return res.status(500).json({ error: error.message || 'Failed to enrich brand profile' });
   }
 }
 
@@ -761,6 +907,7 @@ module.exports = {
   getOnboardingStatus,
   extractWebsiteBrand,
   generateVoiceDraft,
+  enrichBrandProfile,
   previewBrandProfile,
   previewLandingWebsite,
 };

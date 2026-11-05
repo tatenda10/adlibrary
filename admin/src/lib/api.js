@@ -1,6 +1,10 @@
-export const API_URL =  'https://viraladlibrary.space';
+export const API_URL = (
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_API_BASE_URL ||
+  'http://localhost:5000'
+).replace(/\/+$/, '');
 
-//export const API_URL = 'http://localhost:5000';
+// Production: set VITE_API_URL=https://viraladlibrary.space in admin/.env
 async function request(path, options = {}) {
   const url = path.startsWith('http') ? path : `${API_URL}${path}`;
   const response = await fetch(url, {
@@ -169,8 +173,25 @@ export function adminGetOnboardingProfiles(token, { limit, offset, search } = {}
   });
 }
 
-export function adminGetOnboardingProfileDetail(token, userId) {
-  return request(`/api/admin/onboarding/${encodeURIComponent(userId)}`, {
+export function adminGetOnboardingProfileDetail(token, userId, { days } = {}) {
+  const params = new URLSearchParams();
+  if (days) params.set('days', String(days));
+  const query = params.toString() ? `?${params.toString()}` : '';
+  return request(`/api/admin/onboarding/${encodeURIComponent(userId)}${query}`, {
     headers: adminHeaders(token),
+  });
+}
+
+export function adminGetEntitlements(token) {
+  return request('/api/admin/entitlements', {
+    headers: adminHeaders(token),
+  });
+}
+
+export function adminPutEntitlements(token, payload) {
+  return request('/api/admin/entitlements', {
+    method: 'PUT',
+    headers: adminHeaders(token),
+    body: JSON.stringify(payload),
   });
 }

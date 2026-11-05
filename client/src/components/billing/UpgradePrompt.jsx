@@ -14,7 +14,11 @@ function UpgradePrompt({
   const { notifyApiError } = useApiToast();
   const [loadingPlan, setLoadingPlan] = useState('');
 
-  const isStarter = subscription?.current_plan === 'starter';
+  const isStarter = String(subscription?.current_plan || subscription?.plan_key || '').toLowerCase() === 'starter';
+  const isPro =
+    Boolean(subscription?.is_pro) ||
+    String(subscription?.current_plan || subscription?.plan_key || '').toLowerCase() === 'pro';
+  const isPaid = Boolean(subscription?.is_active);
 
   const handleCheckout = async (planKey) => {
     try {
@@ -42,19 +46,25 @@ function UpgradePrompt({
           <PlanCard
             name="Starter"
             price="$49/mo"
-            active={subscription?.current_plan === 'starter'}
-            buttonLabel={isStarter && !requirePro ? 'Current plan' : 'Choose Starter'}
+            active={isStarter && isPaid}
+            buttonLabel={isStarter && isPaid ? 'Current plan' : 'Choose Starter'}
             loading={loadingPlan === 'starter'}
-            disabled={subscription?.current_plan === 'starter'}
+            disabled={isStarter && isPaid}
             onClick={() => handleCheckout('starter')}
           />
           <PlanCard
             name="Pro"
             price="$99/mo"
-            active={subscription?.current_plan === 'pro'}
-            buttonLabel={subscription?.current_plan === 'pro' ? 'Current plan' : isStarter ? 'Upgrade to Pro' : 'Choose Pro'}
+            active={isPro && isPaid}
+            buttonLabel={
+              isPro && isPaid
+                ? 'Current plan'
+                : requirePro || isStarter
+                  ? 'Upgrade to Pro'
+                  : 'Choose Pro'
+            }
             loading={loadingPlan === 'pro'}
-            disabled={subscription?.current_plan === 'pro'}
+            disabled={isPro && isPaid}
             onClick={() => handleCheckout('pro')}
           />
           <article className="rounded-lg border p-4 text-left" style={{ borderColor: 'var(--app-border)' }}>
@@ -98,7 +108,7 @@ function PlanCard({ name, price, active, buttonLabel, loading, disabled, onClick
       <p className="mt-3 text-xs app-muted">
         {name === 'Starter'
           ? 'Core research access across the workspace.'
-          : 'Advanced AI workflows, CRO audit, and premium tools.'}
+          : 'Advanced AI workflows, higher CRO quotas, and premium tools.'}
       </p>
       <button
         type="button"

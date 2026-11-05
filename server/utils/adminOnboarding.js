@@ -25,6 +25,7 @@ function normalizeBrandProfileRow(row) {
   const tone = safeParseJson(row.tone);
   const valueProps = safeParseJson(row.value_props);
   const contentPillars = safeParseJson(row.content_pillars);
+  const audienceRole = preferences?.audienceRole || '';
 
   return {
     id: row.id,
@@ -40,6 +41,7 @@ function normalizeBrandProfileRow(row) {
     channels,
     preferences,
     niche: preferences?.niche || '',
+    audience_role: audienceRole,
     country: preferences?.country || (Array.isArray(preferences?.countries) ? preferences.countries[0] : '') || '',
     countries: preferences?.countries || [],
     suggested_channels_text: preferences?.suggestedChannelsText || '',
@@ -47,6 +49,8 @@ function normalizeBrandProfileRow(row) {
     tone,
     value_props: valueProps,
     content_pillars: contentPillars,
+    onboarding_step: Number(row.onboarding_step) || 1,
+    onboarding_completed: Boolean(Number(row.onboarding_completed)),
     created_at: row.created_at,
     updated_at: row.updated_at,
     last_scraped_at: row.last_scraped_at,
@@ -87,6 +91,8 @@ async function listAdminOnboardingProfiles({ limit = 100, offset = 0, search = '
        bp.tone,
        bp.value_props,
        bp.content_pillars,
+       bp.onboarding_step,
+       bp.onboarding_completed,
        bp.created_at,
        bp.updated_at,
        bp.last_scraped_at
@@ -134,6 +140,8 @@ async function getAdminOnboardingProfileByUserId(userId) {
        bp.tone,
        bp.value_props,
        bp.content_pillars,
+       bp.onboarding_step,
+       bp.onboarding_completed,
        bp.created_at,
        bp.updated_at,
        bp.last_scraped_at
@@ -144,11 +152,105 @@ async function getAdminOnboardingProfileByUserId(userId) {
     [id]
   );
 
-  if (!rows?.length) return null;
+  if (!rows?.length) {
+    const [userOnly] = await pool.query(
+      `SELECT id, email, username FROM users WHERE id = ? LIMIT 1`,
+      [id]
+    );
+    if (!userOnly?.length) return null;
+    return {
+      user_id: userOnly[0].id,
+      email: userOnly[0].email || null,
+      username: userOnly[0].username || null,
+      brand_name: '',
+      website_url: '',
+      industry: '',
+      niche: '',
+      audience_role: '',
+      countries: [],
+      channels: [],
+      story: '',
+      target_audience: '',
+      onboarding_step: 1,
+      onboarding_completed: false,
+    };
+  }
   return normalizeBrandProfileRow(rows[0]);
+}
+
+async function getAdminOnboardingUserJourney(userId, { days = 90 } = {}) {
+  const id = String(userId || '').trim();
+  if (!id) return null;
+
+  const profile = await getAdminOnboardingProfileByUserId(id);
+  const safeDays = Math.min(Math.max(Number(days) || 90, 1), 180);
+
+  const [eventRows] = await pool.query(
+    `SELECT event_name, props_json, page_path, created_at
+     FROM product_events
+     WHERE user_id = ?
+       AND event_name LIKE 'onboarding_%'
+       AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+     ORDER BY created_at ASC
+     LIMIT 500`,
+    [id, safeDays]
+  );
+
+  const events = (eventRows || []).map((row) => {
+    let props = null;
+    try {
+      props = typeof row.props_json === 'object' ? row.props_json : JSON.parse(row.props_json || 'null');
+    } catch {
+      props = null;
+    }
+    return {
+      event_name: row.event_name,
+      page_path: row.page_path || '',
+      props: props || {},
+      created_at: row.created_at,
+    };
+  });
+
+  const roleFromEvents = events
+    .map((item) => item.props?.audience_role || item.props?.audienceRole || '')
+    .filter(Boolean)
+    .pop();
+
+  const answers = {};
+  for (const item of events) {
+    const key = String(item.event_name || '');
+    if (key === 'onboarding_q_role_answered') answers.role = item.props?.audience_role || item.props?.audienceRole || answers.role;
+    if (key === 'onboarding_q_website_answered' || key === 'onboarding_website_extracted') {
+      answers.website = item.props?.website_url || answers.website;
+    }
+    if (key === 'onboarding_billing_plan_selected' || key === 'onboarding_billing_checkout_started') {
+      answers.plan = item.props?.plan_key || item.props?.checkout_plan || answers.plan;
+    }
+  }
+
+  return {
+    user_id: id,
+    profile,
+    flow: {
+      audience_role: profile?.audience_role || roleFromEvents || '',
+      brand_name: profile?.brand_name || '',
+      website_url: profile?.website_url || answers.website || '',
+      industry: profile?.industry || '',
+      niche: profile?.niche || '',
+      countries: profile?.countries || [],
+      channels: Array.isArray(profile?.channels) ? profile.channels : [],
+      story: profile?.story || '',
+      ideal_customer: profile?.target_audience || '',
+      plan: answers.plan || '',
+      onboarding_step: profile?.onboarding_step || 1,
+      onboarding_completed: Boolean(profile?.onboarding_completed),
+    },
+    events,
+  };
 }
 
 module.exports = {
   listAdminOnboardingProfiles,
   getAdminOnboardingProfileByUserId,
+  getAdminOnboardingUserJourney,
 };

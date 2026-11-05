@@ -1,27 +1,21 @@
 const pool = require('../db/connection');
 
 const ONBOARDING_MILESTONES = [
-  { key: 'onboarding_started', label: 'Started onboarding' },
-  { key: 'onboarding_q_role_viewed', label: 'Who are you' },
-  { key: 'onboarding_q_role_answered', label: 'Your role' },
-  { key: 'onboarding_q_website_viewed', label: 'Website URL' },
-  { key: 'onboarding_q_brand_name_answered', label: 'Brand name' },
-  { key: 'onboarding_q_industry_answered', label: 'Industry' },
-  { key: 'onboarding_q_niche_answered', label: 'Niche' },
-  { key: 'onboarding_q_countries_answered', label: 'Countries' },
-  { key: 'onboarding_q_channels_answered', label: 'Channels' },
-  { key: 'onboarding_q_story_answered', label: 'Brand story' },
-  { key: 'onboarding_q_ideal_customer_answered', label: 'Ideal customer' },
-  { key: 'onboarding_completed', label: 'Completed onboarding' },
+  { key: 'onboarding_started', label: 'Started' },
+  { key: 'onboarding_q_role_answered', label: 'Chose role' },
+  { key: 'onboarding_q_website_answered', label: 'Added website' },
+  { key: 'onboarding_q_brand_name_answered', label: 'Confirmed brand' },
+  { key: 'onboarding_q_channels_answered', label: 'Markets & channels' },
+  { key: 'onboarding_completed', label: 'Completed setup' },
 ];
 
 const BILLING_MILESTONES = [
-  { key: 'onboarding_unlock_viewed', label: 'Viewed unlock teaser' },
+  { key: 'onboarding_unlock_viewed', label: 'Saw unlock' },
   { key: 'onboarding_unlock_clicked', label: 'Clicked unlock' },
-  { key: 'onboarding_billing_viewed', label: 'Viewed billing' },
-  { key: 'onboarding_billing_plan_selected', label: 'Selected a plan' },
+  { key: 'onboarding_billing_viewed', label: 'Viewed plans' },
+  { key: 'onboarding_billing_plan_selected', label: 'Picked a plan' },
   { key: 'onboarding_billing_checkout_started', label: 'Started checkout' },
-  { key: 'onboarding_billing_payment_success', label: 'Paid successfully' },
+  { key: 'onboarding_billing_payment_success', label: 'Paid' },
 ];
 
 const BILLING_OUTCOME_EVENTS = [
@@ -277,35 +271,14 @@ async function getOnboardingAnalytics({ days = 30 } = {}) {
     .sort((a, b) => b.views - a.views);
 
   const [dropoffRows] = await pool.query(
-    `SELECT props_json, user_id
+    `SELECT props_json, user_id, session_id, created_at
      FROM product_events
      WHERE event_name IN ('onboarding_dropoff', 'onboarding_billing_dropoff')
        AND created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+     ORDER BY created_at DESC
      LIMIT 2000`,
     [safeDaysVal]
   );
-
-  const dropoffBreakdown = new Map();
-  for (const row of dropoffRows || []) {
-    const props = parseJson(row.props_json) || {};
-    const stepKey = String(props.step_key || props.question_label || 'unknown');
-    const role = String(props.audience_role || props.audienceRole || 'unknown');
-    const bucket = `${role}::${stepKey}`;
-    const entry = dropoffBreakdown.get(bucket) || { step_key: stepKey, role, total: 0, users: new Set() };
-    entry.total += 1;
-    if (row.user_id) entry.users.add(row.user_id);
-    dropoffBreakdown.set(bucket, entry);
-  }
-
-  const dropoffs = [...dropoffBreakdown.values()]
-    .map((entry) => ({
-      step_key: entry.step_key,
-      label: QUESTION_LABELS[entry.step_key] || entry.step_key,
-      role: entry.role,
-      total: entry.total,
-      unique_users: entry.users.size,
-    }))
-    .sort((a, b) => b.total - a.total);
 
   const [planRows] = await pool.query(
     `SELECT props_json, user_id
@@ -338,21 +311,48 @@ async function getOnboardingAnalytics({ days = 30 } = {}) {
     }))
     .sort((a, b) => b.total - a.total);
 
+  const milestoneEventNames = [
+    ...ONBOARDING_MILESTONES.map((step) => step.key),
+    ...BILLING_MILESTONES.map((step) => step.key),
+    'onboarding_q_role_answered',
+    'onboarding_q_website_answered',
+    'onboarding_website_extracted',
+    'onboarding_billing_checkout_canceled',
+    'onboarding_billing_checkout_failed',
+  ];
+
+  // Only milestone events — avoid ASC LIMIT 8000 cutting off newer checkout/billing rows.
   const [roleEventRows] = await pool.query(
-    `SELECT event_name, user_id, props_json
+    `SELECT event_name, user_id, session_id, props_json, created_at
      FROM product_events
      WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
-       AND event_name LIKE 'onboarding_%'
-     ORDER BY created_at ASC
-     LIMIT 8000`,
-    [safeDaysVal]
+       AND event_name IN (?)
+     ORDER BY created_at ASC`,
+    [safeDaysVal, milestoneEventNames]
   );
 
   const knownRoleByUser = new Map();
+  const userProgress = new Map();
+  const sessionToUser = new Map();
   for (const row of roleEventRows || []) {
     const props = parseJson(row.props_json) || {};
     const role = String(props.audience_role || props.audienceRole || '').trim();
     if (role && row.user_id) knownRoleByUser.set(row.user_id, role);
+    if (row.session_id && row.user_id) sessionToUser.set(row.session_id, row.user_id);
+
+    if (!row.user_id) continue;
+    const entry = userProgress.get(row.user_id) || {
+      role: 'unknown',
+      events: new Set(),
+      lastAt: null,
+    };
+    entry.events.add(row.event_name);
+    if (role) entry.role = role;
+    else if (knownRoleByUser.has(row.user_id)) entry.role = knownRoleByUser.get(row.user_id);
+    if (!entry.lastAt || new Date(row.created_at) > new Date(entry.lastAt)) {
+      entry.lastAt = row.created_at;
+    }
+    userProgress.set(row.user_id, entry);
   }
 
   function resolveRole(row) {
@@ -362,6 +362,166 @@ async function getOnboardingAnalytics({ days = 30 } = {}) {
     if (row.user_id && knownRoleByUser.has(row.user_id)) return knownRoleByUser.get(row.user_id);
     return 'unknown';
   }
+
+  function roleLabel(roleKey) {
+    return ROLE_FLOW_DEFS.find((item) => item.key === roleKey)?.label || roleKey || 'No role yet';
+  }
+
+  function buildMilestoneDropoffs(milestones) {
+    const result = [];
+    for (let i = 0; i < milestones.length - 1; i += 1) {
+      const from = milestones[i];
+      const laterKeys = milestones.slice(i + 1).map((step) => step.key);
+      const droppedUsers = [];
+      for (const [userId, prog] of userProgress.entries()) {
+        if (!prog.events.has(from.key)) continue;
+        const reachedLater = laterKeys.some((key) => prog.events.has(key));
+        if (reachedLater) continue;
+        droppedUsers.push({
+          user_id: userId,
+          role: prog.role || 'unknown',
+          role_label: roleLabel(prog.role || 'unknown'),
+          last_at: prog.lastAt,
+        });
+      }
+      droppedUsers.sort((a, b) => String(b.last_at || '').localeCompare(String(a.last_at || '')));
+      result.push({
+        from_key: from.key,
+        from_label: from.label,
+        to_key: milestones[i + 1].key,
+        to_label: milestones[i + 1].label,
+        unique_users: droppedUsers.length,
+        users: droppedUsers.slice(0, 50),
+      });
+    }
+    return result;
+  }
+
+  const setupDropoffs = buildMilestoneDropoffs(ONBOARDING_MILESTONES);
+  const billingDropoffs = buildMilestoneDropoffs(BILLING_MILESTONES);
+
+  const [sessionRows] = await pool.query(
+    `SELECT session_id, user_id
+     FROM product_events
+     WHERE created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+       AND event_name LIKE 'onboarding_%'
+       AND session_id IS NOT NULL AND TRIM(session_id) <> ''
+       AND user_id IS NOT NULL AND TRIM(user_id) <> ''
+     LIMIT 8000`,
+    [safeDaysVal]
+  );
+  for (const row of sessionRows || []) {
+    if (row.session_id && row.user_id) sessionToUser.set(row.session_id, row.user_id);
+  }
+
+  const dropoffBreakdown = new Map();
+  for (const row of dropoffRows || []) {
+    const props = parseJson(row.props_json) || {};
+    const stepKey = String(props.step_key || props.question_label || 'unknown');
+    const resolvedUserId = row.user_id || (row.session_id ? sessionToUser.get(row.session_id) : null) || null;
+    let role = String(props.audience_role || props.audienceRole || '').trim();
+    if (!role && resolvedUserId && knownRoleByUser.has(resolvedUserId)) {
+      role = knownRoleByUser.get(resolvedUserId);
+    }
+    if (!role && resolvedUserId && userProgress.has(resolvedUserId)) {
+      role = userProgress.get(resolvedUserId).role || '';
+    }
+    if (!role) role = 'unknown';
+    const bucket = `${role}::${stepKey}`;
+    const entry = dropoffBreakdown.get(bucket) || {
+      step_key: stepKey,
+      role,
+      total: 0,
+      users: new Map(),
+    };
+    entry.total += 1;
+    if (resolvedUserId) {
+      const existing = entry.users.get(resolvedUserId) || {
+        user_id: resolvedUserId,
+        role,
+        role_label: roleLabel(role),
+        last_at: row.created_at,
+        leaves: 0,
+      };
+      existing.leaves += 1;
+      if (!existing.last_at || new Date(row.created_at) > new Date(existing.last_at)) {
+        existing.last_at = row.created_at;
+      }
+      entry.users.set(resolvedUserId, existing);
+    }
+    dropoffBreakdown.set(bucket, entry);
+  }
+
+  let dropoffs = [...dropoffBreakdown.values()]
+    .map((entry) => ({
+      step_key: entry.step_key,
+      label: QUESTION_LABELS[entry.step_key] || entry.step_key,
+      role: entry.role,
+      role_label: roleLabel(entry.role),
+      total: entry.total,
+      unique_users: entry.users.size,
+      users: [...entry.users.values()]
+        .sort((a, b) => String(b.last_at || '').localeCompare(String(a.last_at || '')))
+        .slice(0, 50),
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const dropUserIds = new Set();
+  for (const row of setupDropoffs) {
+    for (const user of row.users || []) dropUserIds.add(user.user_id);
+  }
+  for (const row of billingDropoffs) {
+    for (const user of row.users || []) dropUserIds.add(user.user_id);
+  }
+  for (const row of dropoffs) {
+    for (const user of row.users || []) dropUserIds.add(user.user_id);
+  }
+
+  const userMetaById = new Map();
+  if (dropUserIds.size) {
+    const [userRows] = await pool.query(
+      `SELECT id, email, username FROM users WHERE id IN (?)`,
+      [[...dropUserIds]]
+    );
+    for (const row of userRows || []) {
+      userMetaById.set(row.id, {
+        email: row.email || null,
+        username: row.username || null,
+      });
+    }
+  }
+
+  function attachUserMeta(users = []) {
+    return users.map((user) => {
+      const meta = userMetaById.get(user.user_id) || {};
+      return {
+        ...user,
+        email: meta.email || null,
+        username: meta.username || null,
+        display_name: meta.email || meta.username || user.user_id,
+      };
+    });
+  }
+
+  for (const row of setupDropoffs) row.users = attachUserMeta(row.users);
+  for (const row of billingDropoffs) row.users = attachUserMeta(row.users);
+  dropoffs = dropoffs.map((row) => ({ ...row, users: attachUserMeta(row.users) }));
+
+  function withStepDropoffs(steps, dropoffRows) {
+    const byKey = new Map((dropoffRows || []).map((row) => [row.from_key, row]));
+    return (steps || []).map((step) => {
+      const drop = byKey.get(step.key);
+      const users = drop?.users || [];
+      return {
+        ...step,
+        dropoff_users: users,
+        dropoff_count: users.length,
+      };
+    });
+  }
+
+  const funnelWithDropoffs = withStepDropoffs(funnel, setupDropoffs);
+  const billingFunnelWithDropoffs = withStepDropoffs(billingFunnel, billingDropoffs);
 
   const countsByRoleEvent = new Map();
   for (const row of roleEventRows || []) {
@@ -448,15 +608,17 @@ async function getOnboardingAnalytics({ days = 30 } = {}) {
 
   return {
     days: safeDaysVal,
-    funnel,
-    billing_funnel: billingFunnel,
+    funnel: funnelWithDropoffs,
+    billing_funnel: billingFunnelWithDropoffs,
     billing_outcomes: billingOutcomes,
     plan_breakdown: plans,
     role_breakdown: roleBreakdown,
     role_funnels: roleFunnels,
     question_answers: questionAnswers,
     step_breakdown: steps,
-    dropoffs,
+    dropoffs: dropoffs.filter((row) => row.unique_users > 0),
+    setup_dropoffs: setupDropoffs,
+    billing_dropoffs: billingDropoffs,
     completion_rate: completionRate,
     billing_conversion_rate: billingConversionRate,
     recent: (recent || []).map(normalizeEventRow),

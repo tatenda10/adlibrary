@@ -20,8 +20,7 @@ function clamp(value, min, max, fallback) {
 
 function resolveInstagramResultLimit(subscription, requestedLimit, fallback = 48) {
   const paidLimit = clamp(requestedLimit, 1, 48, fallback);
-  if (subscription?.is_active) return paidLimit;
-  return Math.min(paidLimit, FREE_RESULT_LIMIT);
+  return paidLimit;
 }
 
 function resolveInstagramUrl(query) {

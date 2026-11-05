@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   adminGetAnalytics,
   adminGetAnalyticsEventDetail,
@@ -163,7 +164,7 @@ export function AnalyticsPage() {
         />
       ) : null}
 
-      {tab === 'onboarding' ? <OnboardingTab loading={loading} data={onboarding} /> : null}
+      {tab === 'onboarding' ? <OnboardingTab loading={loading} data={onboarding} days={days} /> : null}
 
       {tab === 'signin' ? <SignInTab loading={loading} data={signin} /> : null}
 
@@ -344,11 +345,18 @@ function EventDetailPanel({ detail }) {
   );
 }
 
-function toFunnelSteps(rows = []) {
+function toFunnelSteps(rows = [], dropoffsByFromKey = {}) {
   return (rows || []).map((step, index, arr) => {
     const users = Number(step.unique_users || 0);
     const nextUsers = Number(arr[index + 1]?.unique_users || 0);
-    const abandonments = index < arr.length - 1 ? Math.max(users - nextUsers, 0) : 0;
+    const dropUsers = Array.isArray(step.dropoff_users)
+      ? step.dropoff_users
+      : (dropoffsByFromKey[step.key]?.users || []);
+    const abandonments = Math.max(
+      Number(step.dropoff_count || 0),
+      dropUsers.length,
+      index < arr.length - 1 ? Math.max(users - nextUsers, 0) : 0
+    );
     return {
       step_index: index + 1,
       name: step.label,
@@ -357,16 +365,158 @@ function toFunnelSteps(rows = []) {
       step_completion_rate: users > 0 && index < arr.length - 1 ? nextUsers / users : users > 0 ? 1 : 0,
       abandonments,
       abandonment_rate: users > 0 ? abandonments / users : 0,
+      dropoff_users: dropUsers,
     };
   });
 }
 
-function OnboardingTab({ loading, data }) {
+function formatDropTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString();
+}
+
+function DropoffUserList({ users = [], days = 30 }) {
+  if (!users.length) {
+    return <p className="mt-2 text-xs text-[#9ca3af]">No user details available for this drop-off.</p>;
+  }
+
+  return (
+    <ul className="mt-2 space-y-1.5 rounded-sm border border-white/10 bg-black/30 p-3">
+      {users.map((user) => (
+        <li key={user.user_id} className="border-b border-white/5 pb-2 last:border-b-0 last:pb-0">
+          <div className="flex w-full flex-wrap items-baseline justify-between gap-2 text-sm">
+            <div className="min-w-0">
+              <p className="truncate font-medium text-white">{user.display_name || user.email || user.user_id}</p>
+              <p className="text-xs text-[#9ca3af]">
+                {user.role_label || user.role || 'No role yet'}
+                {user.email && user.email !== user.display_name ? ` · ${user.email}` : ''}
+              </p>
+              <p className="font-mono text-[10px] text-[#6b7280]">{user.user_id}</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+              <span className="text-xs text-[#7f8ba0]">{formatDropTime(user.last_at)}</span>
+              <Link
+                to={`/onboarding/${encodeURIComponent(user.user_id)}?days=${days}`}
+                className="text-xs font-semibold text-emerald-300 hover:text-emerald-200"
+              >
+                View
+              </Link>
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SimpleFunnelList({ title, subtitle, steps = [], summary = null, days = 30 }) {
+  const [openDropIndex, setOpenDropIndex] = useState(null);
+
+  if (!steps.length) {
+    return (
+      <AdminCard>
+        <p className="text-sm text-[#9ca3af]">No funnel data for this period.</p>
+      </AdminCard>
+    );
+  }
+
+  const maxUsers = Math.max(...steps.map((s) => Number(s.active_users || 0)), 1);
+  const entered = Number(summary?.entered ?? steps[0]?.active_users ?? 0);
+  const completed = Number(summary?.completed ?? steps[steps.length - 1]?.active_users ?? 0);
+  const overall = Number(summary?.overall_conversion ?? (entered ? completed / entered : 0));
+
+  return (
+    <AdminCard>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">{title}</p>
+          <h2 className="mt-1 text-lg font-semibold text-white">{subtitle}</h2>
+        </div>
+        <div className="flex flex-wrap gap-4 text-sm">
+          <div>
+            <p className="text-[#7f8ba0]">Entered</p>
+            <p className="text-lg font-semibold text-white">{entered}</p>
+          </div>
+          <div>
+            <p className="text-[#7f8ba0]">Completed</p>
+            <p className="text-lg font-semibold text-white">{completed}</p>
+          </div>
+          <div>
+            <p className="text-[#7f8ba0]">Conversion</p>
+            <p className="text-lg font-semibold text-emerald-300">{(overall * 100).toFixed(1)}%</p>
+          </div>
+        </div>
+      </div>
+
+      <ol className="mt-6 space-y-3">
+        {steps.map((step, index) => {
+          const users = Number(step.active_users || 0);
+          const widthPct = Math.max(users > 0 ? 6 : 0, Math.round((users / maxUsers) * 100));
+          const pctOfFirst = entered > 0 ? Math.round((users / entered) * 1000) / 10 : 0;
+          const dropOff = Math.max(Number(step.abandonments || 0), (step.dropoff_users || []).length);
+          const dropOffRate = users > 0 ? dropOff / users : 0;
+          const dropUsers = step.dropoff_users || [];
+          const isLast = index === steps.length - 1;
+          const isOpen = openDropIndex === index;
+
+          return (
+            <li key={`${step.event || step.name}-${index}`}>
+              <div className="flex items-center gap-3">
+                <span className="w-6 shrink-0 text-xs text-[#7f8ba0]">{index + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="text-sm font-medium text-white">{step.name}</p>
+                    <p className="text-sm text-[#c4cbd6]">
+                      <span className="font-semibold text-white">{users}</span>
+                      <span className="text-[#7f8ba0]"> users · {pctOfFirst}% of start</span>
+                    </p>
+                  </div>
+                  <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-emerald-400/80"
+                      style={{ width: `${widthPct}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+              {!isLast && (dropUsers.length > 0 || dropOff > 0) ? (
+                <div className="mt-2 ml-9">
+                  <button
+                    type="button"
+                    onClick={() => setOpenDropIndex(isOpen ? null : index)}
+                    className="text-left text-xs text-rose-300 underline-offset-2 hover:underline"
+                    disabled={!dropUsers.length}
+                  >
+                    −{dropUsers.length || dropOff} left here
+                    {users > 0 ? ` (${Math.round(((dropUsers.length || dropOff) / users) * 1000) / 10}%)` : ''}
+                    {dropUsers.length ? ` · ${isOpen ? 'hide' : 'show'} users` : ' · no user ids on these events'}
+                  </button>
+                  {isOpen && dropUsers.length ? <DropoffUserList users={dropUsers} days={days} /> : null}
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+    </AdminCard>
+  );
+}
+
+function OnboardingTab({ loading, data, days = 30 }) {
+  const [openLeaveKey, setOpenLeaveKey] = useState('');
   if (loading) return <p className="text-sm text-[#9ca3af]">Loading onboarding analytics…</p>;
   if (!data) return null;
 
-  const funnelSteps = toFunnelSteps(data.funnel);
-  const billingSteps = toFunnelSteps(data.billing_funnel);
+  const setupDropByKey = Object.fromEntries(
+    (data.setup_dropoffs || []).map((row) => [row.from_key, row])
+  );
+  const billingDropByKey = Object.fromEntries(
+    (data.billing_dropoffs || []).map((row) => [row.from_key, row])
+  );
+  const funnelSteps = toFunnelSteps(data.funnel, setupDropByKey);
+  const billingSteps = toFunnelSteps(data.billing_funnel, billingDropByKey);
 
   return (
     <>
@@ -394,41 +544,15 @@ function OnboardingTab({ loading, data }) {
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <GaFunnelChart
-          title="Onboarding (all roles)"
-          subtitle="Combined setup questions"
-          badge={<AdminBadge>Database copy</AdminBadge>}
-          steps={funnelSteps}
-          summary={{
-            entered: funnelSteps[0]?.active_users || 0,
-            completed: funnelSteps.find((s) => s.event === 'onboarding_completed')?.active_users || 0,
-            overall_conversion: (data.completion_rate || 0) / 100,
-          }}
-        />
-
-        <GaFunnelChart
-          title="Billing (all roles)"
-          subtitle="Combined unlock → plan → pay"
-          badge={<AdminBadge>Database copy</AdminBadge>}
-          steps={billingSteps}
-          summary={{
-            entered: billingSteps[0]?.active_users || 0,
-            completed: billingSteps.find((s) => s.event === 'onboarding_billing_payment_success')?.active_users || 0,
-            overall_conversion: (data.billing_conversion_rate || 0) / 100,
-          }}
-        />
-      </div>
-
       {(data.role_breakdown || []).length ? (
         <AdminCard>
           <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Flows by role</p>
-          <p className="mt-1 text-xs text-[#7f8ba0]">
-            Which onboarding path people chose: founder, media buyer, in-house, or agency.
+          <p className="mt-1 text-sm text-[#9ca3af]">
+            Which path people chose: founder, media buyer, in-house, or agency.
           </p>
           <div className="mt-4 overflow-x-auto">
             <table className="min-w-full text-left text-sm">
-              <thead className="text-[11px] uppercase tracking-[0.12em] text-[#7f8ba0]">
+              <thead className="text-[11px] uppercase tracking-[0.12em] text-[#9ca3af]">
                 <tr>
                   <th className="py-2 pr-4 font-medium">Flow</th>
                   <th className="py-2 pr-4 font-medium">Entered</th>
@@ -440,13 +564,13 @@ function OnboardingTab({ loading, data }) {
               </thead>
               <tbody>
                 {data.role_breakdown.map((row) => (
-                  <tr key={row.role} className="border-t border-white/8">
-                    <td className="py-2 pr-4 text-white">{row.label}</td>
-                    <td className="py-2 pr-4 text-[#9ca3af]">{row.started}</td>
-                    <td className="py-2 pr-4 text-[#9ca3af]">{row.completed}</td>
-                    <td className="py-2 pr-4 text-[#9ca3af]">{row.unlock_viewed}</td>
-                    <td className="py-2 pr-4 text-[#9ca3af]">{row.paid}</td>
-                    <td className="py-2 text-[#9ca3af]">
+                  <tr key={row.role} className="border-t border-white/10">
+                    <td className="py-2.5 pr-4 font-medium text-white">{row.label}</td>
+                    <td className="py-2.5 pr-4 text-[#c4cbd6]">{row.started}</td>
+                    <td className="py-2.5 pr-4 text-[#c4cbd6]">{row.completed}</td>
+                    <td className="py-2.5 pr-4 text-[#c4cbd6]">{row.unlock_viewed}</td>
+                    <td className="py-2.5 pr-4 text-[#c4cbd6]">{row.paid}</td>
+                    <td className="py-2.5 text-[#c4cbd6]">
                       {row.unlock_viewed
                         ? `${Math.round((row.paid / row.unlock_viewed) * 1000) / 10}%`
                         : '—'}
@@ -459,16 +583,43 @@ function OnboardingTab({ loading, data }) {
         </AdminCard>
       ) : null}
 
-      {(data.role_funnels || []).some((row) => row.started || row.completed) ? (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {data.role_funnels
-            .filter((row) => row.started || row.completed || row.paid)
-            .map((row) => (
-              <div key={row.role} className="grid gap-4">
-                <GaFunnelChart
-                  title={`${row.label} · setup`}
-                  subtitle="This role’s onboarding questions"
-                  badge={<AdminBadge>{row.completion_rate}% completed</AdminBadge>}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <SimpleFunnelList
+          title="Setup funnel"
+          subtitle="Where people drop in onboarding"
+          days={days}
+          steps={funnelSteps}
+          summary={{
+            entered: funnelSteps[0]?.active_users || 0,
+            completed: funnelSteps.find((s) => s.event === 'onboarding_completed')?.active_users || 0,
+            overall_conversion: (data.completion_rate || 0) / 100,
+          }}
+        />
+        <SimpleFunnelList
+          title="Billing funnel"
+          subtitle="Unlock → plan → pay"
+          days={days}
+          steps={billingSteps}
+          summary={{
+            entered: billingSteps[0]?.active_users || 0,
+            completed: billingSteps.find((s) => s.event === 'onboarding_billing_payment_success')?.active_users || 0,
+            overall_conversion: (data.billing_conversion_rate || 0) / 100,
+          }}
+        />
+      </div>
+
+      {(data.role_funnels || []).some((row) => row.started || row.completed || row.paid) ? (
+        <div className="space-y-4">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Per-role funnels</p>
+          <div className="grid gap-4 xl:grid-cols-2">
+            {data.role_funnels
+              .filter((row) => row.started || row.completed || row.paid)
+              .map((row) => (
+                <SimpleFunnelList
+                  key={row.role}
+                  title={row.label}
+                  subtitle={`${row.completion_rate}% completed · ${row.paid} paid`}
+                  days={days}
                   steps={toFunnelSteps(row.funnel)}
                   summary={{
                     entered: row.started,
@@ -476,22 +627,8 @@ function OnboardingTab({ loading, data }) {
                     overall_conversion: (row.completion_rate || 0) / 100,
                   }}
                 />
-                <GaFunnelChart
-                  title={`${row.label} · billing`}
-                  subtitle="This role’s unlock → pay"
-                  badge={<AdminBadge>{row.paid} paid</AdminBadge>}
-                  steps={toFunnelSteps(row.billing_funnel)}
-                  summary={{
-                    entered: row.billing_funnel?.[0]?.unique_users || 0,
-                    completed: row.paid,
-                    overall_conversion:
-                      (row.billing_funnel?.[0]?.unique_users || 0) > 0
-                        ? row.paid / row.billing_funnel[0].unique_users
-                        : 0,
-                  }}
-                />
-              </div>
-            ))}
+              ))}
+          </div>
         </div>
       ) : null}
 
@@ -499,14 +636,14 @@ function OnboardingTab({ loading, data }) {
         {(data.billing_outcomes || []).length ? (
           <AdminCard>
             <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Billing outcomes</p>
-            <p className="mt-1 text-xs text-[#7f8ba0]">
-              Card details are entered on the payment page. “Returned without paying” means they left checkout before completing.
+            <p className="mt-1 text-sm text-[#9ca3af]">
+              “Returned without paying” means they left checkout before completing.
             </p>
             <ul className="mt-4 space-y-2">
               {data.billing_outcomes.map((row) => (
-                <li key={row.key} className="flex justify-between text-sm">
+                <li key={row.key} className="flex justify-between gap-4 text-sm">
                   <span className="text-white">{row.label}</span>
-                  <span className="text-[#9ca3af]">
+                  <span className="shrink-0 text-[#c4cbd6]">
                     {row.total} hits · {row.unique_users} users
                   </span>
                 </li>
@@ -520,9 +657,9 @@ function OnboardingTab({ loading, data }) {
             <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Plans selected</p>
             <ul className="mt-4 space-y-2">
               {data.plan_breakdown.map((row) => (
-                <li key={row.plan_key} className="flex justify-between text-sm">
-                  <span className="text-white capitalize">{row.plan_key}</span>
-                  <span className="text-[#9ca3af]">
+                <li key={row.plan_key} className="flex justify-between gap-4 text-sm">
+                  <span className="capitalize text-white">{row.plan_key}</span>
+                  <span className="shrink-0 text-[#c4cbd6]">
                     {row.total} hits · {row.unique_users} users
                   </span>
                 </li>
@@ -537,26 +674,10 @@ function OnboardingTab({ loading, data }) {
           <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Question answers</p>
           <ul className="mt-4 space-y-2">
             {data.question_answers.map((row) => (
-              <li key={row.key} className="flex justify-between text-sm">
+              <li key={row.key} className="flex justify-between gap-4 text-sm">
                 <span className="text-white">{row.label}</span>
-                <span className="text-[#9ca3af]">
+                <span className="shrink-0 text-[#c4cbd6]">
                   {row.total} answers · {row.unique_users} users
-                </span>
-              </li>
-            ))}
-          </ul>
-        </AdminCard>
-      ) : null}
-
-      {(data.step_breakdown || []).length ? (
-        <AdminCard>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Screen views</p>
-          <ul className="mt-4 space-y-2">
-            {data.step_breakdown.map((row) => (
-              <li key={row.step_key} className="flex justify-between text-sm">
-                <span className="text-white">{row.label || row.step_key}</span>
-                <span className="text-[#9ca3af]">
-                  {row.views} views · {row.unique_users} users
                 </span>
               </li>
             ))}
@@ -567,28 +688,45 @@ function OnboardingTab({ loading, data }) {
       {(data.dropoffs || []).length ? (
         <AdminCard>
           <p className="text-[11px] uppercase tracking-[0.14em] text-rose-300">Left on this step</p>
+          <p className="mt-1 text-sm text-[#9ca3af]">Click a row to see who left and which flow they were on.</p>
           <ul className="mt-4 space-y-2">
-            {data.dropoffs.map((row) => (
-              <li key={`${row.role || 'unknown'}::${row.step_key}`} className="flex justify-between text-sm">
-                <span className="text-white">
-                  {row.label || row.step_key}
-                  {row.role && row.role !== 'unknown' ? ` · ${row.role}` : ''}
-                </span>
-                <span className="text-[#9ca3af]">
-                  {row.total} leaves · {row.unique_users} users
-                </span>
-              </li>
-            ))}
+            {data.dropoffs.map((row) => {
+              const key = `${row.role || 'unknown'}::${row.step_key}`;
+              const open = openLeaveKey === key;
+              return (
+                <li key={key} className="rounded-sm border border-white/8 bg-black/20 px-3 py-2">
+                  <button
+                    type="button"
+                    onClick={() => setOpenLeaveKey(open ? '' : key)}
+                    className="flex w-full items-center justify-between gap-4 text-left text-sm"
+                  >
+                    <span className="text-white">
+                      {row.label || row.step_key}
+                      <span className="text-[#9ca3af]">
+                        {' '}· {row.role_label || row.role || 'No role yet'}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-[#c4cbd6]">
+                      {row.unique_users} users · {open ? 'hide' : 'show'}
+                    </span>
+                  </button>
+                  {open ? <DropoffUserList users={row.users || []} days={days} /> : null}
+                </li>
+              );
+            })}
           </ul>
         </AdminCard>
       ) : null}
 
       <AdminCard>
-        <p className="text-[11px] uppercase tracking-[0.14em] text-[#7f8ba0]">Recent onboarding activity</p>
+        <p className="text-[11px] uppercase tracking-[0.14em] text-[#9ca3af]">Recent onboarding activity</p>
         <ul className="mt-4 space-y-2">
           {(data.recent || []).slice(0, 20).map((row) => (
             <ActivityRow key={row.id} row={row} />
           ))}
+          {!(data.recent || []).length ? (
+            <li className="text-sm text-[#9ca3af]">No onboarding events in this period.</li>
+          ) : null}
         </ul>
       </AdminCard>
     </>

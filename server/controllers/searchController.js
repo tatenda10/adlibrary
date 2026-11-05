@@ -453,8 +453,7 @@ function normalizeSearchNumber(value) {
 
 function resolveSearchResultLimit(subscription, requestedLimit, paidFallback = 20) {
   const paidLimit = Math.min(Number(requestedLimit) || paidFallback, 50);
-  if (subscription?.is_active) return paidLimit;
-  return Math.min(paidLimit, FREE_RESULT_LIMIT);
+  return paidLimit;
 }
 
 function normalizeTikTokSearchOptions(raw = {}) {

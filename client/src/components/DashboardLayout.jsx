@@ -1,26 +1,28 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { UserButton } from '@clerk/clerk-react';
+import { useBilling } from './billing/BillingContext.jsx';
+import logo from '../assets/logo.png';
 
 const railItems = [
   // { key: 'overview', label: 'Overview', to: '/app', icon: HomeIcon },
   { key: 'website', label: 'Website', to: '/website/cro-audit', icon: WebsiteIcon },
-  { key: 'tiktok', label: 'TikTok', to: '/tiktok/trending', icon: TikTokIcon },
+  { key: 'tiktok', label: 'Short-Form Videos', to: '/tiktok/trending', icon: TikTokIcon },
   { key: 'facebook', label: 'Facebook', to: '/facebook/ads', icon: FacebookIcon },
-  { key: 'instagram', label: 'Instagram', to: '/instagram/posts', icon: InstagramIcon },
+  // { key: 'instagram', label: 'Instagram', to: '/instagram/posts', icon: InstagramIcon },
   { key: 'tutorial', label: 'Tutorial', to: '/tutorial', icon: TutorialIcon },
   // { key: 'articles', label: 'Articles', to: '/articles', icon: ArticlesIcon },
   { key: 'settings', label: 'Settings', to: '/settings', icon: SettingsIcon },
 ];
 
 const tikTokTabs = [
-  { label: 'Trending', to: '/tiktok/trending', icon: TrendIcon, description: 'Keyword search for TikTok videos and ad angles.' },
-  { label: 'Hot Takes', to: '/tiktok/hot-takes', icon: TrendIcon, description: 'TikTok Creative Center top ads by country, industry, and filters.' },
-  { label: 'Creators', to: '/tiktok/creators', icon: FollowersIcon, description: 'Trending creators by followers, engagement, or avg views — cached with follower bands.' },
+  { label: 'Trending', to: '/tiktok/trending', icon: TrendIcon, description: 'Keyword search for short-form videos and ad angles.' },
+  { label: 'Hot Takes', to: '/tiktok/hot-takes', icon: TrendIcon, description: 'Creative Center top short-form ads by country, industry, and filters.' },
+  // { label: 'Creators', to: '/tiktok/creators', icon: FollowersIcon, description: 'Trending creators by followers, engagement, or avg views — cached with follower bands.' },
   // { label: 'Trending Hashtags', to: '/tiktok/trending-hashtags', icon: TrendIcon, description: 'Industry hashtags from Creative Center for niche and category trends.' },
-  { label: 'Hook Library', to: '/tiktok/hooks', icon: SparkIcon, description: 'Opening lines and scroll-stopping hook ideas.' },
+  // { label: 'Hook Library', to: '/tiktok/hooks', icon: SparkIcon, description: 'Opening lines and scroll-stopping hook ideas.' },
   { label: 'Trending Music', to: '/tiktok/trending-music', icon: MusicIcon, description: 'Daily chart plus trending sounds by country.' },
-  { label: 'Predictor', to: '/tiktok/predictor', icon: SignalIcon, description: 'Early signals for likely breakout concepts.' },
+  // { label: 'Predictor', to: '/tiktok/predictor', icon: SignalIcon, description: 'Early signals for likely breakout concepts.' },
   { label: 'Workspace', to: '/tiktok/workspace', icon: WorkspaceIcon, description: 'Save TikTok links in folders to review and play later.' },
   // { label: 'Saved', to: '/tiktok/saved', icon: BookmarkMiniIcon, description: 'Collected TikTok winners to revisit later.' },
   // { label: 'For You', to: '/tiktok/for-you', icon: SparkIcon, description: 'A personalized stream tuned to your brand.' },
@@ -47,9 +49,9 @@ const singleSectionTabs = {
     // { label: 'Saved Audits', to: '/website/saved', icon: BookmarkMiniIcon, description: 'Reopen CRO audits saved to your account.' },
   ],
   facebook: [
-    { label: 'Ads', to: '/facebook/ads', icon: TrendIcon, description: 'Browse Facebook ad results and creative angles.' },
-    { label: 'Trending Music', to: '/facebook/trending-music', icon: MusicIcon, description: 'Explore music-led Facebook creative angles and audio inspiration.' },
-    { label: 'Hook Generator', to: '/facebook/hook-generator', icon: SparkIcon, description: 'Generate Facebook hooks, headlines, CTAs, and primary ad copy from your brief.' },
+    { label: 'Ads Spy', to: '/facebook/ads', icon: TrendIcon, description: 'Browse Facebook ad results and creative angles.' },
+    { label: 'Ad Examples', to: '/facebook/ad-examples', icon: BookmarkIcon, description: 'Browse saved Facebook ad examples and swipe-file inspiration.' },
+    { label: 'Ad Generator', to: '/facebook/hook-generator', icon: SparkIcon, description: 'Generate Facebook hooks, headlines, CTAs, and primary ad copy from your brief.' },
     // { label: 'Workspace', to: '/facebook/workspace', icon: WorkspaceIcon, description: 'Save Facebook post and video links in folders.' },
     // { label: 'Groups', to: '/facebook/groups', icon: GroupIcon, description: 'Search Facebook groups by niche and community topic.' },
     // { label: 'Followers', to: '/facebook/followers', icon: FollowersIcon, description: 'Inspect followers and following from public page or profile URLs.' },
@@ -69,7 +71,7 @@ const sectionMeta = {
   overview: { eyebrow: 'Intelligence', title: 'Marketing dashboard', description: 'Track trend lines, official updates, and what is moving right now before diving deeper.' },
   tutorial: { eyebrow: 'Guide', title: 'App tutorial', description: 'See what each area of the app does before you start using the tools.' },
   website: { eyebrow: 'Website', title: 'Website research', description: 'Run CRO audits and full-funnel competitor teardowns from one workspace.' },
-  tiktok: { eyebrow: 'Platform', title: 'TikTok intelligence', description: 'Trend discovery, hooks, audio, and prediction tools live together here.' },
+  tiktok: { eyebrow: 'Platform', title: 'Short-form video intelligence', description: 'Trend discovery, audio, and short-form video inspiration live together here.' },
   facebook: { eyebrow: 'Platform', title: 'Facebook research', description: 'Search ads, trending music, and hooks from one Facebook workspace.' },
   instagram: { eyebrow: 'Platform', title: 'Instagram inspiration', description: 'Keep the main Instagram workspace focused on swipe-worthy posts and reels.' },
   articles: { eyebrow: 'Content', title: 'Articles', description: 'Incoming stories and market research for your team.' },
@@ -78,12 +80,56 @@ const sectionMeta = {
   settings: { eyebrow: 'Settings', title: 'Settings', description: 'Billing and profile stay grouped in one utility area.' },
 };
 
+const groupedSidebar = [
+  {
+    title: 'Main',
+    items: [
+      { label: 'Dashboard', to: '/app', icon: HomeIcon },
+    ],
+  },
+  {
+    title: 'Content Library',
+    items: [
+      { label: 'Facebook', to: '/facebook/ads', icon: FacebookIcon, match: ['/facebook/'] },
+      { label: 'Short-Form Videos', to: '/tiktok/trending', icon: TikTokIcon, match: ['/tiktok/'] },
+      // { label: 'Instagram', to: '/instagram/posts', icon: InstagramIcon, match: ['/instagram'] },
+    ],
+  },
+  {
+    title: 'Creative Tools',
+    items: [
+      { label: 'AI Studio', to: '/app/ai-studio', icon: SparkIcon, match: ['/app/ai-studio'] },
+      { label: 'Content', to: '/app/content', icon: WorkspaceIcon, match: ['/app/content', '/app/create-content'] },
+      { label: 'Influencers', to: '/app/influencers', icon: FollowersIcon },
+      { label: 'Content Calendar', to: '/app/monthly-social-media-plan', icon: ArticlesIcon },
+      { label: 'Saved Plans', to: '/app/saved-plans', icon: BookmarkMiniIcon },
+    ],
+  },
+  {
+    title: 'Workspaces',
+    items: [
+      { label: 'Bookmarks', to: '/bookmarks', icon: BookmarkIcon },
+      { label: 'Notes', to: '/notes', icon: NoteIcon },
+    ],
+  },
+  {
+    title: 'Account',
+    items: [
+      { label: 'Billing', to: '/billing', icon: CardIcon },
+      { label: 'Refer & Earn', to: '/refer-and-earn', icon: GiftIcon },
+      { label: 'Brand', to: '/brand', icon: BriefcaseIcon },
+      { label: 'Tutorial', to: '/tutorial', icon: TutorialIcon },
+    ],
+  },
+];
+
 function DashboardLayout() {
   const location = useLocation();
-  const activeSection = getActiveSection(location.pathname);
+  const { credits } = useBilling();
+  const creditBalance = Number(credits?.balance ?? 0);
+  const platformTabs = getPlatformTabs(location.pathname);
+  const topTitle = getTopTitle(location.pathname);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const sidebarItems = getSidebarItems(activeSection);
-  const sidebarMeta = sectionMeta[activeSection];
   const closeMobileNav = () => setMobileNavOpen(false);
 
   useEffect(() => {
@@ -121,16 +167,9 @@ function DashboardLayout() {
   }, []);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#050505] text-[#e9edef]">
-      <aside className="hidden h-full w-[64px] shrink-0 border-r border-white/8 bg-[#141414] sm:w-[72px] md:flex md:flex-col md:items-center md:justify-between md:py-4">
-        <div className="flex flex-col items-center gap-0 pt-0.5">
-          {railItems.map((item) => (
-            <RailLink key={item.key} item={item} isActive={activeSection === item.key} />
-          ))}
-        </div>
-        <div className="flex flex-col items-center gap-3">
-          <UserButton afterSignOutUrl="/" />
-        </div>
+    <div className="flex h-screen w-full gap-3 overflow-hidden bg-white p-3 text-slate-900">
+      <aside className="hidden h-[calc(100vh-1.5rem)] w-[236px] shrink-0 overflow-hidden rounded-2xl border border-emerald-900/30 bg-[#052e16] md:flex md:flex-col">
+        <SidebarContent pathname={location.pathname} />
       </aside>
 
       {mobileNavOpen ? (
@@ -143,7 +182,7 @@ function DashboardLayout() {
           />
           <div
             id="mobile-dashboard-nav"
-            className="absolute inset-y-0 left-0 flex w-[min(100vw-2.5rem,20rem)] max-w-[320px] flex-col border-r border-white/10 bg-[#0a0a0a] shadow-2xl"
+            className="absolute inset-y-3 left-3 flex w-[min(100vw-3rem,20rem)] max-w-[320px] flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl"
           >
             <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
               <span className="text-sm font-semibold text-white">Navigate</span>
@@ -156,53 +195,18 @@ function DashboardLayout() {
                 <CloseIcon className="h-5 w-5" />
               </button>
             </div>
-            <div className="border-b border-white/8 bg-[#141414] px-3 py-3">
-              <p className="mb-2 text-[10px] uppercase tracking-[0.14em] text-[#7f8ba0]">Sections</p>
-              <div className="flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                {railItems.map((item) => (
-                  <RailLink
-                    key={item.key}
-                    item={item}
-                    isActive={activeSection === item.key}
-                    onNavigate={closeMobileNav}
-                    compact
-                  />
-                ))}
-              </div>
-            </div>
-            <div className="border-b border-white/8 px-4 py-3">
-              <p className="truncate text-sm font-medium text-[#c9d2df]">{sidebarMeta.title}</p>
-              <p className="mt-0.5 text-[11px] uppercase tracking-[0.18em] text-[#7f8ba0]">{sidebarMeta.eyebrow}</p>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 pb-4">
-              {sidebarItems.map((item) => (
-                <ContextLink key={`m-${item.to}`} item={item} onNavigate={closeMobileNav} />
-              ))}
-            </div>
+            <SidebarContent pathname={location.pathname} onNavigate={closeMobileNav} />
           </div>
         </div>
       ) : null}
 
-      <div className="flex min-w-0 flex-1 flex-col bg-[#050505]">
-        <header className="border-b border-white/8 bg-[#050505]">
-          <div className="hidden border-b border-white/6 md:block">
-            <div className="flex justify-center overflow-x-auto px-6 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <div className="flex min-w-max items-center justify-center gap-8">
-                {sidebarItems.map((item) => (
-                  <TopNavLink key={`top-${item.to}`} item={item} />
-                ))}
-              </div>
-            </div>
-            <div className="px-6 pb-3 pt-2 text-center">
-              <p className="text-sm text-[#7d7d7d]">{sidebarMeta.description}</p>
-            </div>
-          </div>
-
-          <div className="flex h-[56px] items-center px-3 sm:h-[64px] sm:px-4 md:hidden">
-            <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-white">
+        <header className="border-b border-slate-200 bg-white">
+          <div className="flex h-12 items-center justify-between gap-4 px-3 sm:px-4 md:px-5">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
               <button
                 type="button"
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-[#1a1a1a] text-[#e9edef] md:hidden hover:bg-white/10"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:hidden"
                 aria-expanded={mobileNavOpen}
                 aria-controls="mobile-dashboard-nav"
                 aria-label={mobileNavOpen ? 'Close menu' : 'Open menu'}
@@ -210,17 +214,32 @@ function DashboardLayout() {
               >
                 {mobileNavOpen ? <CloseIcon className="h-5 w-5" /> : <MenuIcon className="h-5 w-5" />}
               </button>
+              {platformTabs.length ? (
+                <nav className="min-w-0 flex-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Section tabs">
+                  <div className="flex items-center gap-8">
+                    {platformTabs.map((item) => (
+                      <PlatformTab key={`${item.to}-${item.label}`} item={item} />
+                    ))}
+                  </div>
+                </nav>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-2 text-slate-500">
+              <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800">
+                <CreditsIcon className="h-4 w-4 text-[#10b981]" />
+                {creditBalance} credits
+              </span>
+              <TopBarIcon label="Notifications">
+                <BellIcon className="h-6 w-6" />
+              </TopBarIcon>
             </div>
           </div>
         </header>
 
         <main
-          className="relative min-h-0 flex-1 overflow-y-auto p-4 md:p-6"
+          className="relative min-h-0 flex-1 overflow-y-auto bg-white p-4 [scrollbar-width:none] md:p-6 [&::-webkit-scrollbar]:hidden"
           style={{
-            backgroundColor: '#050505',
-            backgroundImage:
-              'radial-gradient(circle at 25px 25px, rgba(255,255,255,0.03) 2px, transparent 0), radial-gradient(circle at 75px 75px, rgba(255,255,255,0.02) 2px, transparent 0)',
-            backgroundSize: '100px 100px',
+            backgroundColor: '#ffffff',
           }}
         >
           <Outlet />
@@ -228,6 +247,136 @@ function DashboardLayout() {
       </div>
     </div>
   );
+}
+
+function getTopTitle(pathname) {
+  if (pathname.startsWith('/app/monthly-social-media-plan')) return 'Content Calendar';
+  if (pathname.startsWith('/app/content') || pathname.startsWith('/app/create-content')) return 'Content';
+  if (pathname.startsWith('/app/ai-studio')) return 'AI Studio';
+  if (pathname.startsWith('/app/influencers')) return 'Influencers';
+  return 'ViralAdLibrary';
+}
+
+function getPlatformTabs(pathname) {
+  if (pathname.startsWith('/tiktok/')) {
+    return tikTokTabs;
+  }
+  if (pathname.startsWith('/facebook/')) {
+    return singleSectionTabs.facebook;
+  }
+  // if (pathname.startsWith('/instagram')) {
+  //   return singleSectionTabs.instagram;
+  // }
+  return [];
+}
+
+function PlatformTab({ item }) {
+  const location = useLocation();
+  const isCurrent = location.pathname === item.to;
+  return (
+    <NavLink
+      to={item.to}
+      className={() =>
+        `relative inline-flex h-12 items-center justify-center gap-2 whitespace-nowrap px-0 text-[12px] font-medium transition ${
+          isCurrent
+            ? 'text-[#10b981] after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-[#10b981]'
+            : 'text-slate-700 hover:text-slate-950'
+        }`
+      }
+    >
+      <span>{item.label}</span>
+    </NavLink>
+  );
+}
+
+function TopBarIcon({ label, children }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      className="relative flex h-8 w-8 items-center justify-center rounded-full hover:bg-slate-100 hover:text-slate-700"
+    >
+      {children}
+    </button>
+  );
+}
+
+function SidebarContent({ pathname, onNavigate }) {
+  return (
+    <>
+      <div className="shrink-0 rounded-t-2xl">
+        <NavLink
+          to="/app"
+          onClick={onNavigate}
+          className="flex h-[58px] items-center gap-3 rounded-t-2xl border-b border-white/10 bg-[#052e16] px-5 text-white"
+        >
+          <img src={logo} alt="ViralAdLibrary logo" className="h-7 w-7 rounded-lg object-cover" />
+          <span className="text-sm font-bold">ViralAdLibrary</span>
+        </NavLink>
+      </div>
+
+      <nav className="min-h-0 flex-1 overflow-y-auto pb-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {groupedSidebar.map((group, index) => (
+          <div
+            key={group.title}
+            className={`py-4 ${index < groupedSidebar.length - 1 ? 'border-b border-white/10' : ''}`}
+          >
+            <p className="px-5 text-[11px] font-black uppercase tracking-[0.14em] text-emerald-100/70">
+              {group.title}
+            </p>
+            <div className="mt-4">
+              {group.items.map((item) => (
+                <SidebarItem
+                  key={item.to}
+                  item={item}
+                  active={isSidebarItemActive(pathname, item)}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </div>
+          </div>
+        ))}
+      </nav>
+
+      <div className="shrink-0 rounded-b-2xl border-t border-white/10 bg-[#052e16] px-5 py-4">
+        <div className="flex items-center gap-3">
+          <UserButton afterSignOutUrl="/" />
+          <div className="min-w-0">
+            <p className="truncate text-xs font-bold text-white">Account</p>
+            <p className="truncate text-[11px] text-emerald-100/70">Manage profile</p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function SidebarItem({ item, active, onNavigate }) {
+  const Icon = item.icon;
+
+  return (
+    <NavLink
+      to={item.to}
+      onClick={onNavigate}
+      className={`mx-0 flex items-center gap-3 px-5 py-2.5 text-[13px] transition ${
+        active
+          ? 'bg-emerald-500 text-white'
+          : 'text-emerald-50/80 hover:bg-white/10 hover:text-white'
+      }`}
+    >
+      {Icon ? <Icon className="h-[17px] w-[17px] shrink-0" /> : null}
+      <span className="truncate">{item.label}</span>
+    </NavLink>
+  );
+}
+
+function isSidebarItemActive(pathname, item) {
+  if (Array.isArray(item.match)) return item.match.some((prefix) => pathname.startsWith(prefix));
+  if (item.to === '/app') return pathname === '/app';
+  if (item.to === '/settings') return pathname.startsWith('/settings');
+  if (item.to === '/billing') return pathname.startsWith('/billing');
+  if (item.to === '/facebook/ads') return pathname === '/facebook/ads';
+  return pathname === item.to || pathname.startsWith(`${item.to}/`);
 }
 
 function getActiveSection(pathname) {
@@ -373,6 +522,23 @@ function CloseIcon({ className = 'h-5 w-5' }) {
   );
 }
 
+function BellIcon({ className = 'h-5 w-5' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10 20a2.4 2.4 0 0 0 4 0" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CreditsIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M12 3v18M17 6.5a4 4 0 0 0-4-2.5H9.5a3 3 0 0 0 0 6H14a3 3 0 0 1 0 6h-3.5A4 4 0 0 1 6.8 14" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function HomeIcon({ className = 'h-[18px] w-[18px]' }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.75">
@@ -434,6 +600,15 @@ function CardIcon({ className = 'h-[18px] w-[18px]' }) {
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.75">
       <rect x="2" y="5" width="20" height="14" rx="2" />
       <path d="M2 10h20" />
+    </svg>
+  );
+}
+
+function GiftIcon({ className = 'h-[18px] w-[18px]' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.75">
+      <path d="M4 11h16v9H4zM3 7h18v4H3z" />
+      <path d="M12 7v13M8.5 7C6 6.5 6 3.5 8 3.5S12 7 12 7s2-3.5 4-3.5 2 3-.5 3.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

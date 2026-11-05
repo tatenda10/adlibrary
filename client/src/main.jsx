@@ -18,7 +18,7 @@ initTheme();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <ClerkProvider publishableKey={publishableKey}>
+    <ClerkProvider publishableKey={publishableKey} signInUrl="/sign-in" signUpUrl="/sign-up" afterSignOutUrl="/">
       <BrowserRouter>
         <BillingProvider>
           <App />

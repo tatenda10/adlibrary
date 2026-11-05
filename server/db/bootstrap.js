@@ -11,6 +11,40 @@ const CREATE_TABLE_QUERIES = [
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_user_cycle_metric (user_id, cycle_key, metric_key)
   )`,
+  `CREATE TABLE IF NOT EXISTS credit_accounts (
+    user_id VARCHAR(255) PRIMARY KEY,
+    cycle_key VARCHAR(32) NOT NULL,
+    balance INT NOT NULL DEFAULT 0,
+    monthly_allowance INT NOT NULL DEFAULT 0,
+    lifetime_purchased INT NOT NULL DEFAULT 0,
+    lifetime_spent INT NOT NULL DEFAULT 0,
+    last_refilled_at DATETIME DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS credit_action_costs (
+    action_key VARCHAR(64) PRIMARY KEY,
+    label VARCHAR(128) NOT NULL,
+    credit_cost INT NOT NULL DEFAULT 1,
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    metadata JSON DEFAULT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS credit_transactions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    action_key VARCHAR(64) DEFAULT NULL,
+    transaction_type VARCHAR(32) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'completed',
+    amount INT NOT NULL,
+    balance_after INT DEFAULT NULL,
+    related_transaction_id BIGINT DEFAULT NULL,
+    description VARCHAR(255) DEFAULT NULL,
+    metadata JSON DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_credit_transactions_user_created (user_id, created_at),
+    INDEX idx_credit_transactions_related (related_transaction_id)
+  )`,
   `CREATE TABLE IF NOT EXISTS saved_collections (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id VARCHAR(255) NOT NULL,
@@ -28,6 +62,28 @@ const CREATE_TABLE_QUERIES = [
     is_archived TINYINT(1) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  )`,
+  `CREATE TABLE IF NOT EXISTS content_library_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    source VARCHAR(64) NOT NULL DEFAULT 'manual',
+    platform VARCHAR(64) NOT NULL DEFAULT 'facebook',
+    brand_name VARCHAR(255) DEFAULT NULL,
+    title VARCHAR(255) NOT NULL,
+    category VARCHAR(128) DEFAULT NULL,
+    format VARCHAR(64) DEFAULT NULL,
+    angle VARCHAR(128) DEFAULT NULL,
+    notes TEXT DEFAULT NULL,
+    image_url TEXT DEFAULT NULL,
+    source_url TEXT DEFAULT NULL,
+    source_asset_url TEXT DEFAULT NULL,
+    tags_json JSON DEFAULT NULL,
+    meta_json JSON DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_content_library_user (user_id),
+    INDEX idx_content_library_platform (platform),
+    UNIQUE KEY uniq_content_library_user_asset (user_id, source_asset_url(191))
   )`,
   `CREATE TABLE IF NOT EXISTS tiktok_trending_music_cache (
     country_code VARCHAR(8) NOT NULL PRIMARY KEY,
@@ -251,6 +307,13 @@ async function ensureRuntimeTables() {
        AND ((brand_name IS NOT NULL AND TRIM(brand_name) <> '')
          OR (website_url IS NOT NULL AND TRIM(website_url) <> ''))`
   );
+
+  const { ensureEntitlementsCatalog, getEntitlementsCatalog } = require('../utils/entitlements');
+  await ensureEntitlementsCatalog();
+  await getEntitlementsCatalog({ force: true });
+
+  const { ensureCreditActionCosts } = require('../utils/credits');
+  await ensureCreditActionCosts();
 }
 
 module.exports = { ensureRuntimeTables };

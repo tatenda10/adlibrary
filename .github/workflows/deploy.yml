@@ -1,0 +1,92 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy production
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Check out tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build client artifact
+        working-directory: client
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build admin artifact
+        working-directory: admin
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package release artifacts
+        shell: bash
+        run: |
+          mkdir -p release/client release/admin release/server
+          cp -R client/dist/. release/client/
+          cp -R admin/dist/. release/admin/
+          cp server/package.json server/package-lock.json server/index.js release/server/
+          tar -czf viraladlibrary-${GITHUB_SHA}.tar.gz release
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: viraladlibrary-${{ github.sha }}
+          path: viraladlibrary-${{ github.sha }}.tar.gz
+          retention-days: 14
+
+      - name: Trigger hosting deployment
+        if: ${{ secrets.DEPLOY_WEBHOOK_URL != '' }}
+        env:
+          DEPLOY_WEBHOOK_URL: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+          DEPLOY_COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          curl --fail-with-body --retry 3 --silent --show-error \
+            -X POST "$DEPLOY_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{\"commit\":\"$DEPLOY_COMMIT_SHA\",\"repository\":\"$GITHUB_REPOSITORY\"}"
+
+      - name: Verify deployment health
+        if: ${{ secrets.PRODUCTION_HEALTHCHECK_URL != '' }}
+        env:
+          PRODUCTION_HEALTHCHECK_URL: ${{ secrets.PRODUCTION_HEALTHCHECK_URL }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --silent --show-error "$PRODUCTION_HEALTHCHECK_URL"; then
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1
+
+      - name: Explain missing deployment configuration
+        if: ${{ secrets.DEPLOY_WEBHOOK_URL == '' }}
+        run: |
+          echo 'DEPLOY_WEBHOOK_URL is not configured.'
+          echo 'CI passed and a release artifact was created, but no hosting deployment was triggered.'

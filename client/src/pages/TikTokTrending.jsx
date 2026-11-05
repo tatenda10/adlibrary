@@ -14,7 +14,7 @@ function TikTokTrending() {
   const { getToken } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { subscription } = useBilling();
+  const { subscription, can } = useBilling();
   const [keyword, setKeyword] = useState('');
   const [limit, setLimit] = useState(20);
   const [sortBy, setSortBy] = useState('relevance');
@@ -45,15 +45,9 @@ function TikTokTrending() {
     () => (activeVideo ? resolveVideoStreamUrl(activeVideo) : ''),
     [activeVideo],
   );
-  const hasProAccess = Boolean(subscription?.is_pro);
-  const hasPaidPlan = Boolean(subscription?.is_active);
-  const limitOptions = hasPaidPlan ? [12, 20, 32, 40] : [FREE_RESULT_LIMIT];
-
-  useEffect(() => {
-    if (!hasPaidPlan && limit !== FREE_RESULT_LIMIT) {
-      setLimit(FREE_RESULT_LIMIT);
-    }
-  }, [hasPaidPlan, limit]);
+  const hasProAccess = true;
+  const hasPaidPlan = true;
+  const limitOptions = [12, 20, 32, 40];
 
   useEffect(() => {
     if (!searchError) return;
@@ -288,21 +282,18 @@ function TikTokTrending() {
 
   return (
     <section className="space-y-4">
-      <form onSubmit={handleSearch} className="space-y-2">
-        <div className="flex flex-wrap items-start gap-2">
+      <form onSubmit={handleSearch} className="rounded-sm border border-slate-200 bg-white p-4 shadow-[0_10px_35px_rgba(15,23,42,0.04)]">
+        <div className="grid gap-3 xl:grid-cols-[minmax(280px,1fr)_auto_90px_150px_160px]">
           <div className="min-w-[220px] flex-1">
             {intelligent ? (
-              <div
-                className="rounded-sm px-3 py-3"
-                style={{ background: 'var(--app-panel)', border: 'none' }}
-              >
+              <div className="rounded-sm border border-slate-200 bg-slate-50 px-3 py-3">
                 <textarea
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
                   placeholder="Search for high-converting skincare ads for women 25-34 in the US"
-                  className="min-h-[112px] w-full resize-none bg-transparent text-sm outline-none"
+                  className="min-h-[96px] w-full resize-none bg-transparent text-sm text-slate-950 outline-none placeholder:text-slate-400"
                 />
-                <div className="mt-2 border-t border-white/6 pt-2 text-xs text-white/55">
+                <div className="mt-2 border-t border-slate-200 pt-2 text-xs text-slate-500">
                   <p>With intelligent search you can just search what you want.</p>
                   <p className="mt-1">Example: “Show me winning TikTok ads for a productivity app targeting students.”</p>
                   <p className="mt-1">This will turn your request into a smarter search query to find more relevant TikTok results.</p>
@@ -313,16 +304,12 @@ function TikTokTrending() {
                 value={keyword}
                 onChange={(e) => setKeyword(e.target.value)}
                 placeholder="Keyword search (e.g. ai companion ads)"
-                className="w-full rounded-sm px-3 py-2 text-sm"
-                style={{ background: 'var(--app-panel)', border: 'none' }}
+                className="h-12 w-full rounded-sm border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-950 outline-none placeholder:text-slate-400 focus:border-[#25d366] focus:bg-white focus:ring-4 focus:ring-[#25d366]/10"
               />
             )}
           </div>
 
-          <label
-            className="inline-flex items-center gap-2 rounded-sm px-3 py-2 text-xs text-white/70"
-            style={{ background: 'var(--app-panel)' }}
-          >
+          <label className="inline-flex h-12 items-center justify-center gap-2 rounded-sm border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-700">
             <input
               type="checkbox"
               checked={intelligent}
@@ -341,8 +328,7 @@ function TikTokTrending() {
           <select
             value={limit}
             onChange={(e) => setLimit(Number(e.target.value))}
-            className="rounded-sm px-3 py-2 text-sm"
-            style={{ background: 'var(--app-panel)', border: 'none' }}
+            className="h-12 rounded-sm border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-950 outline-none focus:border-[#25d366] focus:bg-white"
           >
             {limitOptions.map((value) => (
               <option key={value} value={value}>{value}</option>
@@ -352,8 +338,7 @@ function TikTokTrending() {
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            className="rounded-sm px-3 py-2 text-sm"
-            style={{ background: 'var(--app-panel)', border: 'none' }}
+            className="h-12 rounded-sm border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-950 outline-none focus:border-[#25d366] focus:bg-white"
           >
             <option value="relevance">Relevance</option>
             <option value="views">Most Views</option>
@@ -363,41 +348,35 @@ function TikTokTrending() {
           <button
             type="submit"
             disabled={isSearching}
-            className="rounded-sm bg-[#25d366] px-4 py-2 text-sm font-semibold text-black disabled:opacity-60"
+            className="h-12 rounded-sm bg-[#25d366] px-5 text-sm font-black text-black shadow-[0_10px_20px_rgba(37,211,102,0.18)] transition hover:bg-[#18c95a] disabled:opacity-60"
           >
             {isSearching ? 'Searching...' : 'Search Videos'}
           </button>
         </div>
 
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <input
             value={minViews}
             onChange={(e) => setMinViews(e.target.value.replace(/[^\d]/g, ''))}
             placeholder="Min views"
-            className="w-full rounded-sm px-3 py-2 text-sm"
-            style={{ background: 'var(--app-panel)', border: 'none' }}
+            className="h-11 w-full rounded-sm border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-950 outline-none placeholder:text-slate-400 focus:border-[#25d366] focus:bg-white"
           />
 
           <input
             value={minLikes}
             onChange={(e) => setMinLikes(e.target.value.replace(/[^\d]/g, ''))}
             placeholder="Min likes"
-            className="w-full rounded-sm px-3 py-2 text-sm"
-            style={{ background: 'var(--app-panel)', border: 'none' }}
+            className="h-11 w-full rounded-sm border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-950 outline-none placeholder:text-slate-400 focus:border-[#25d366] focus:bg-white"
           />
 
           <input
             value={hookContains}
             onChange={(e) => setHookContains(e.target.value)}
             placeholder="Hook contains"
-            className="w-full rounded-sm px-3 py-2 text-sm"
-            style={{ background: 'var(--app-panel)', border: 'none' }}
+            className="h-11 w-full rounded-sm border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-950 outline-none placeholder:text-slate-400 focus:border-[#25d366] focus:bg-white"
           />
 
-          <label
-            className="inline-flex items-center gap-2 rounded-sm px-3 py-2 text-xs text-white/70"
-            style={{ background: 'var(--app-panel)' }}
-          >
+          <label className="inline-flex h-11 items-center gap-2 rounded-sm border border-slate-200 bg-slate-50 px-4 text-xs font-semibold text-slate-700">
             <input
               type="checkbox"
               checked={hookMode}
@@ -407,30 +386,6 @@ function TikTokTrending() {
             Hook Mode
           </label>
         </div>
-
-        {!hasPaidPlan ? (
-          <div className="rounded-sm border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
-            Free plan: 5 TikTok searches per month, 8 results per search, 1 workspace folder, 2 saved items, and 1 analysis preview.
-            <button
-              type="button"
-              onClick={() => navigate('/billing?checkoutPlan=starter')}
-              className="ml-2 font-semibold text-white underline underline-offset-2"
-            >
-              Upgrade for more
-            </button>
-          </div>
-        ) : !hasProAccess ? (
-          <div className="rounded-sm border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-            Pro unlocks intelligent TikTok search.
-            <button
-              type="button"
-              onClick={() => navigate('/billing?checkoutPlan=pro')}
-              className="ml-2 font-semibold text-white underline underline-offset-2"
-            >
-              Upgrade to Pro
-            </button>
-          </div>
-        ) : null}
 
         {hasPaidPlan && (videos.length > 0 || selectedCollectionId) && (
           <div className="flex flex-wrap items-center gap-2">
@@ -620,10 +575,12 @@ function TikTokTrending() {
 
       {!videos.length && !isSearching && (
         <div className="grid min-h-[52vh] place-items-center">
-          <div className="flex max-w-sm flex-col items-center text-center">
-            <EmptySearchIcon />
-            <p className="mt-8 text-3xl font-semibold text-white">Search to get started</p>
-            <p className="mt-2 text-sm text-white/55">
+          <div className="flex max-w-md flex-col items-center rounded-sm border border-slate-200 bg-white px-10 py-12 text-center shadow-[0_18px_60px_rgba(15,23,42,0.06)]">
+            <div className="rounded-full bg-[#25d366]/10 p-5 text-[#25d366]">
+              <EmptySearchIcon />
+            </div>
+            <p className="mt-6 text-2xl font-black text-slate-950">Search to get started</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
               Use a keyword above to search TikTok videos. For country-based platform trends, open Hot Takes.
             </p>
           </div>

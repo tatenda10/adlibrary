@@ -7,7 +7,7 @@ const {
 const { listAdminUsersFromClerk } = require('../utils/clerkUsers');
 const {
   listAdminOnboardingProfiles,
-  getAdminOnboardingProfileByUserId,
+  getAdminOnboardingUserJourney,
 } = require('../utils/adminOnboarding');
 const {
   listAllEvents,
@@ -166,9 +166,11 @@ async function getAdminOnboardingProfiles(req, res) {
 
 async function getAdminOnboardingProfileDetail(req, res) {
   try {
-    const profile = await getAdminOnboardingProfileByUserId(req.params.userId);
-    if (!profile) return res.status(404).json({ error: 'Onboarding profile not found' });
-    return res.json({ profile });
+    const journey = await getAdminOnboardingUserJourney(req.params.userId, {
+      days: req.query?.days || 90,
+    });
+    if (!journey) return res.status(404).json({ error: 'User not found' });
+    return res.json(journey);
   } catch (error) {
     console.error('getAdminOnboardingProfileDetail error:', error);
     return res.status(500).json({ error: 'Failed to load onboarding profile' });

@@ -8,7 +8,7 @@ const PLAN_KEYS = {
   AGENCY: 'agency',
 };
 
-const ACTIVE_STATUSES = new Set(['active', 'trialing', 'on_trial']);
+const ACTIVE_STATUSES = new Set(['active', 'trialing', 'on_trial', 'past_due']);
 
 function parseJsonField(value) {
   if (value == null) return null;
@@ -259,8 +259,8 @@ function pickBestSubscription(candidates = []) {
   const scored = [...candidates].sort((a, b) => {
     const aStatus = String(a?.status || '').toLowerCase();
     const bStatus = String(b?.status || '').toLowerCase();
-    const aActive = ['active', 'trialing', 'on_trial'].includes(aStatus) ? 1 : 0;
-    const bActive = ['active', 'trialing', 'on_trial'].includes(bStatus) ? 1 : 0;
+      const aActive = ACTIVE_STATUSES.has(aStatus) ? 1 : 0;
+    const bActive = ACTIVE_STATUSES.has(bStatus) ? 1 : 0;
     if (aActive !== bActive) return bActive - aActive;
     const aDate = new Date(a?.updated_at || a?.updatedAt || a?.created_at || a?.createdAt || 0).getTime();
     const bDate = new Date(b?.updated_at || b?.updatedAt || b?.created_at || b?.createdAt || 0).getTime();
@@ -328,17 +328,41 @@ async function fetchDodoSubscriptionsForCustomer(customerId) {
   return [];
 }
 
-async function reconcileSubscriptionByUserId(userId, options = {}) {
-  const { onlyWhenInactive = true } = options;
-  const existing = await getSubscriptionByUserId(userId);
-  if (!existing?.dodo_customer_id) return existing;
-  if (onlyWhenInactive && existing.is_active) return existing;
+async function fetchDodoSubscriptionById(subscriptionId) {
+  if (!subscriptionId) return null;
+  try {
+    return await dodoRequest(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+      method: 'GET',
+    });
+  } catch (error) {
+    console.warn('fetchDodoSubscriptionById failed:', error?.message || error);
+    return null;
+  }
+}
 
-  const remoteSubscriptions = await fetchDodoSubscriptionsForCustomer(existing.dodo_customer_id);
-  const best = pickBestSubscription(remoteSubscriptions);
+async function reconcileSubscriptionByUserId(userId, options = {}) {
+  const { onlyWhenInactive = true, subscriptionId = null } = options;
+  const existing = await getSubscriptionByUserId(userId);
+  if (onlyWhenInactive && existing?.is_active) return existing;
+
+  const idToFetch =
+    subscriptionId ||
+    existing?.dodo_subscription_id ||
+    null;
+
+  let best = null;
+  if (idToFetch) {
+    best = await fetchDodoSubscriptionById(idToFetch);
+  }
+
+  if (!best && existing?.dodo_customer_id) {
+    const remoteSubscriptions = await fetchDodoSubscriptionsForCustomer(existing.dodo_customer_id);
+    best = pickBestSubscription(remoteSubscriptions);
+  }
+
   if (!best) return existing;
 
-  const patch = mapDodoSubscriptionToPatch(best, existing.dodo_customer_id);
+  const patch = mapDodoSubscriptionToPatch(best, existing?.dodo_customer_id);
   if (!patch) return existing;
   return upsertSubscriptionByUserId(userId, patch);
 }
@@ -390,10 +414,12 @@ module.exports = {
   PLAN_KEYS,
   canAccessPro,
   dodoRequest,
+  fetchDodoSubscriptionById,
   getDodoBaseUrl,
   getPlanProductId,
   getPriceForPlan,
   getSubscriptionByUserId,
+  mapDodoSubscriptionToPatch,
   reconcileSubscriptionByUserId,
   isSubscriptionActive,
   normalizeSubscription,

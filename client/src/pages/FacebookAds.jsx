@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useBilling } from '../components/billing/BillingContext.jsx';
 import {
   API_URL,
   createCollection,
   intelligentSearchFacebookAds,
-  isBillingOrQuotaError,
   searchFacebookAds,
   searchFacebookPages,
 } from '../lib/api.js';
@@ -19,9 +17,9 @@ import { buildIntelFromFacebookAd, saveBulkCreativeIntel } from '../lib/bulkCrea
 const SPY_DEFAULT_SORT = 'longest_running';
 
 const FB_TOOLBAR_CONTROL =
-  'h-10 min-h-10 shrink-0 rounded-sm app-input px-3 text-sm leading-none';
+  'h-11 min-h-11 shrink-0 rounded-sm border border-slate-200 bg-white px-4 text-sm font-semibold leading-none text-slate-800 outline-none transition focus:border-[#10b981] focus:ring-2 focus:ring-[#10b981]/10';
 const FB_TOOLBAR_BTN =
-  'inline-flex h-10 min-h-10 shrink-0 items-center justify-center rounded-sm px-3 text-sm font-medium leading-none';
+  'inline-flex h-11 min-h-11 shrink-0 items-center justify-center rounded-sm px-5 text-sm font-semibold leading-none transition';
 
 const FACEBOOK_SOURCES = [
   // Meta Ads API is temporarily hidden until a token is configured.
@@ -37,27 +35,17 @@ const FACEBOOK_SOURCES = [
     id: 'facebook_ads',
     sourceKey: 'apify_meta_ads',
     route: '/facebook/ads',
-    label: 'Ads',
+    label: 'Ads Spy',
     helper: '',
     placeholder: 'Keyword, Facebook page URL, page handle, or product niche',
     empty: 'Run a search to load Facebook ad creative results.',
     button: 'Search',
   },
   {
-    id: 'facebook_trending_music',
-    sourceKey: 'apify_meta_ads',
-    route: '/facebook/trending-music',
-    label: 'Trending Music',
-    helper: 'Search for Facebook ad creative inspired by music trends, artists, sounds, or audio-led concepts.',
-    placeholder: 'Artist, song trend, audio theme, or music-led campaign idea',
-    empty: 'Search to explore Facebook ads through a music-first angle.',
-    button: 'Search',
-  },
-  {
     id: 'facebook_hook_generator',
     route: '/facebook/hook-generator',
-    label: 'Hook Generator',
-    helper: 'Generate Facebook hooks, headlines, CTAs, and primary ad copy from your product brief.',
+    label: 'Ad Generator',
+    helper: 'Generate Facebook ad hooks, headlines, CTAs, and primary ad copy from your product brief.',
     placeholder: '',
     empty: '',
     button: 'Generate',
@@ -87,7 +75,6 @@ const DEFAULT_COUNTRIES = [
   { value: COUNTRY_ALL, label: 'All countries' },
   { value: 'US', label: 'United States' },
 ];
-const FREE_RESULT_LIMIT = 8;
 
 function countryMatchesQuery(item, query) {
   const normalizedQuery = String(query || '').trim().toLowerCase();
@@ -208,6 +195,34 @@ function normalizeAdvertiserMatch(value) {
     .trim();
 }
 
+function getAdvertiserFilterValue(entry) {
+  const pageId = String(entry?.page_id || '').trim();
+  if (pageId) return `page:${pageId}`;
+  const pageUrl = normalizeAdvertiserMatch(entry?.page_url || '');
+  if (pageUrl) return `url:${pageUrl}`;
+  return `name:${normalizeAdvertiserMatch(entry?.name || '')}`;
+}
+
+function adMatchesAdvertiserFilterValue(item, value) {
+  if (!value || value === 'all') return true;
+  const [type, ...rest] = String(value).split(':');
+  const needle = rest.join(':').trim();
+  if (!needle) return true;
+
+  if (type === 'page') {
+    return String(item.page_id || '').trim() === needle;
+  }
+
+  if (type === 'url') {
+    return normalizeAdvertiserMatch(item.page_url || '').includes(needle);
+  }
+
+  const labels = [item.page_name, item.title].map(normalizeAdvertiserMatch).filter(Boolean);
+  if (labels.some((label) => label === needle || label.includes(needle))) return true;
+  const words = needle.split(' ').filter((word) => word.length >= 3);
+  return Boolean(words.length && labels.some((label) => words.every((word) => label.includes(word))));
+}
+
 /** Match an ad row to a competitor card (page id, page URL, or loose name match). */
 function adMatchesCompetitorFilter(item, comp) {
   if (!comp?.name) return true;
@@ -282,7 +297,6 @@ function FacebookAds() {
   const location = useLocation();
   const navigate = useNavigate();
   const { getToken } = useAuth();
-  const { subscription } = useBilling();
   const { notifyBillingOrApiError } = useApiToast();
   const [keyword, setKeyword] = useState('');
   const [country, setCountry] = useState('US');
@@ -306,6 +320,7 @@ function FacebookAds() {
   const [ctaFilter, setCtaFilter] = useState('all');
   const [platformFilter, setPlatformFilter] = useState('all');
   const [sortBy, setSortBy] = useState(SPY_DEFAULT_SORT);
+  const [selectedAd, setSelectedAd] = useState(null);
   const countryRef = useRef(null);
   const [seedQuery, setSeedQuery] = useState('');
   const [selectedCompetitor, setSelectedCompetitor] = useState(null);
@@ -325,9 +340,9 @@ function FacebookAds() {
   );
   const sourceKey = activeSource.sourceKey || activeSource.id;
   const isAdSource = sourceKey === 'apify_meta_ads';
-  const hasProAccess = Boolean(subscription?.is_pro);
-  const hasPaidPlan = Boolean(subscription?.is_active);
-  const limitOptions = hasPaidPlan ? [20, 40, 60, 100] : [FREE_RESULT_LIMIT];
+  const hasProAccess = true;
+  const hasPaidPlan = true;
+  const limitOptions = [20, 40, 60, 100];
   const selectedCountry = useMemo(() => {
     if (country === COUNTRY_ALL) {
       return { value: COUNTRY_ALL, label: 'All countries' };
@@ -340,12 +355,6 @@ function FacebookAds() {
     setSeedQuery('');
     setSelectedCompetitor(null);
   }, [location.pathname]);
-
-  useEffect(() => {
-    if (!hasPaidPlan && limit !== FREE_RESULT_LIMIT) {
-      setLimit(FREE_RESULT_LIMIT);
-    }
-  }, [hasPaidPlan, limit]);
 
   const filteredCountries = useMemo(() => {
     const allOption = { value: COUNTRY_ALL, label: 'All countries' };
@@ -385,7 +394,7 @@ function FacebookAds() {
     }
 
     if (advertiserFilter !== 'all') {
-      next = next.filter((item) => (item.page_name || item.title || '') === advertiserFilter);
+      next = next.filter((item) => adMatchesAdvertiserFilterValue(item, advertiserFilter));
     }
 
     if (ctaFilter !== 'all') {
@@ -413,10 +422,7 @@ function FacebookAds() {
 
   useEffect(() => {
     if (!results.length || advertiserFilter === 'all') return;
-    const names = new Set(
-      results.map((item) => (item.page_name || item.title || '').trim()).filter(Boolean)
-    );
-    if (!names.has(advertiserFilter)) {
+    if (!results.some((item) => adMatchesAdvertiserFilterValue(item, advertiserFilter))) {
       setAdvertiserFilter('all');
     }
   }, [results, advertiserFilter]);
@@ -550,13 +556,6 @@ function FacebookAds() {
   const handleSearch = async (event) => {
     event.preventDefault();
     if (!keyword.trim()) return;
-    if (intelligent && (!isAdSource || !hasProAccess)) {
-      if (!hasProAccess) {
-        navigate('/billing?checkoutPlan=pro');
-      }
-      return;
-    }
-
     setIsLoading(true);
     setResults([]);
     setCompetitors([]);
@@ -637,9 +636,7 @@ function FacebookAds() {
         setSearchNotice('');
       }
     } catch (err) {
-      if (!isBillingOrQuotaError(err)) {
-        console.error(err);
-      }
+      console.error(err);
       setResults([]);
       setSearchPlan(null);
       setResearchSummary(null);
@@ -715,31 +712,28 @@ function FacebookAds() {
 
   const usesBriefInput = isAdSource && searchMode !== 'keyword';
   const isHookGenerator = source === 'facebook_hook_generator';
+  const hasAdResults = isAdSource && results.length > 0;
 
   return (
-    <section className="relative space-y-4">
+    <section className="relative space-y-5 text-slate-900">
       {isHookGenerator ? (
         <FacebookHookGeneratorPanel hasProAccess={hasProAccess} navigate={navigate} />
       ) : (
         <>
-      <form onSubmit={handleSearch} className="space-y-3">
-        <div className="flex w-full flex-wrap items-center gap-2">
+      <form onSubmit={handleSearch} className="space-y-3 bg-white">
+        <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {isAdSource ? (
             <>
               <select
                 value={searchMode}
                 onChange={(event) => {
                   const nextMode = event.target.value;
-                  if ((nextMode === 'research' || nextMode === 'competitor') && !hasProAccess) {
-                    navigate('/billing?checkoutPlan=pro');
-                    return;
-                  }
                   setSearchMode(nextMode);
                   if (nextMode === 'keyword') {
                     setIntelligent(false);
                   }
                 }}
-                className={`${FB_TOOLBAR_CONTROL} min-w-[9.5rem]`}
+                className={`${FB_TOOLBAR_CONTROL} w-[13rem]`}
                 title="Research brief runs AI planning then Apify. Keyword is direct search."
               >
               <option value="research">Research brief</option>
@@ -750,7 +744,7 @@ function FacebookAds() {
               <select
                 value={limit}
                 onChange={(event) => setLimit(Number(event.target.value))}
-                className={`${FB_TOOLBAR_CONTROL} w-[4.5rem]`}
+                className={`${FB_TOOLBAR_CONTROL} w-[5rem]`}
                 aria-label="Result limit"
               >
                 {limitOptions.map((value) => (
@@ -758,20 +752,19 @@ function FacebookAds() {
                 ))}
               </select>
 
-              <div ref={countryRef} className="relative min-w-[10rem] flex-1 max-w-[16rem]">
+              <div ref={countryRef} className="relative w-[20rem] shrink-0">
                 <button
                   type="button"
                   onClick={() => setCountryOpen((prev) => !prev)}
                   className={`${FB_TOOLBAR_CONTROL} flex w-full items-center justify-between gap-2`}
                 >
                   <span className="truncate">{selectedCountry?.label || 'Country'}</span>
-                  <span className="text-[10px] uppercase text-white/45">{country}</span>
+                  <span className="text-[10px] uppercase text-slate-400">{country}</span>
                 </button>
 
               {countryOpen ? (
                 <div
-                  className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 rounded-sm border bg-[#0b0b0b] p-2 shadow-[0_18px_50px_rgba(0,0,0,0.45)]"
-                  style={{ borderColor: 'var(--app-border)' }}
+                  className="absolute left-0 right-0 top-[calc(100%+6px)] z-30 border border-slate-200 bg-white p-2 shadow-[0_18px_50px_rgba(15,23,42,0.16)]"
                 >
                   <input
                     value={countrySearch}
@@ -795,7 +788,7 @@ function FacebookAds() {
                             setCountryOpen(false);
                           }}
                           className={`flex w-full items-center justify-between rounded-sm px-2 py-2 text-left text-sm ${
-                            item.value === country ? 'bg-[#25d366] text-black' : 'text-white/80 hover:bg-white/5'
+                            item.value === country ? 'bg-[#10b981] text-white' : 'text-slate-700 hover:bg-slate-100'
                           }`}
                         >
                           <span>{item.label}</span>
@@ -803,7 +796,7 @@ function FacebookAds() {
                         </button>
                       ))
                     ) : (
-                      <p className="px-2 py-2 text-xs text-white/55">No countries found.</p>
+                      <p className="px-2 py-2 text-xs text-slate-500">No countries found.</p>
                     )}
                   </div>
                 </div>
@@ -813,7 +806,7 @@ function FacebookAds() {
               <select
                 value={adActiveStatus}
                 onChange={(event) => setAdActiveStatus(event.target.value)}
-                className={`${FB_TOOLBAR_CONTROL} min-w-[5.5rem]`}
+                className={`${FB_TOOLBAR_CONTROL} w-[9rem]`}
                 aria-label="Ad active status"
               >
                 <option value="ALL">All</option>
@@ -836,20 +829,16 @@ function FacebookAds() {
 
           {isAdSource ? (
             <label
-              className={`${FB_TOOLBAR_BTN} cursor-pointer gap-2 border border-white/10 bg-[var(--app-panel)] text-xs text-white/80`}
+              className={`${FB_TOOLBAR_BTN} w-[12rem] cursor-pointer gap-2 border border-slate-200 bg-slate-50 text-xs text-slate-700 hover:bg-white`}
               title="Use AI to plan competitors and queries before loading ads from the Ad Library"
             >
               <input
                 type="checkbox"
                 checked={intelligent}
                 onChange={(event) => {
-                  if (event.target.checked && !hasProAccess) {
-                    navigate('/billing?checkoutPlan=pro');
-                    return;
-                  }
                   setIntelligent(event.target.checked);
                 }}
-                className="h-3.5 w-3.5 accent-[#25d366]"
+                className="h-3.5 w-3.5 accent-[#10b981]"
               />
               Intelligence search
             </label>
@@ -858,13 +847,14 @@ function FacebookAds() {
           <button
             type="submit"
             disabled={isLoading}
-            className={`${FB_TOOLBAR_BTN} ml-auto min-w-[6.75rem] bg-[#25d366] font-semibold text-black disabled:opacity-60`}
+            className={`${FB_TOOLBAR_BTN} w-[10rem] bg-[#10b981] text-white hover:bg-[#059669] disabled:opacity-60`}
           >
             {activeSource.button}
           </button>
         </div>
 
-        <div className="w-full rounded-sm p-4" style={{ background: 'var(--app-panel)' }}>
+        {!hasAdResults ? (
+        <div className="w-full rounded-sm border border-slate-200 bg-slate-50 p-4">
           {usesBriefInput ? (
             <textarea
               value={keyword}
@@ -874,7 +864,7 @@ function FacebookAds() {
                   ? 'Describe the niche and competitors you want to uncover…'
                   : 'Describe your market, offer, audience, or angle — we plan competitors then search the Ad Library…'
               }
-              className="min-h-[9.5rem] w-full resize-y bg-transparent text-sm leading-relaxed text-white outline-none placeholder:text-white/40"
+              className="min-h-[10rem] w-full resize-y bg-transparent text-sm leading-relaxed text-slate-900 outline-none placeholder:text-slate-400"
             />
           ) : (
             <div className="space-y-3">
@@ -882,16 +872,16 @@ function FacebookAds() {
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
                 placeholder={activeSource.placeholder}
-                className="h-10 w-full bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+                className="h-10 w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
               />
 
               {pageSuggestionsLoading ? (
-                <p className="text-xs text-white/50">Looking up official Facebook pages…</p>
+                <p className="text-xs text-slate-500">Looking up official Facebook pages…</p>
               ) : null}
 
               {pageSuggestions.length ? (
                 <div className="space-y-2">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Official pages</p>
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Official pages</p>
                   <div className="flex flex-wrap gap-2">
                     {pageSuggestions.map((page) => {
                       const selected = selectedPageUrls.includes(page.url);
@@ -906,12 +896,12 @@ function FacebookAds() {
                           }}
                           className={`rounded-sm border px-2.5 py-1.5 text-left text-xs ${
                             selected
-                              ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-100'
-                              : 'border-white/10 bg-black/20 text-white/80 hover:bg-white/5'
+                              ? 'border-[#10b981]/30 bg-[#10b981]/10 text-[#047857]'
+                              : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
                           }`}
                         >
                           <span className="font-semibold">{page.name}</span>
-                          <span className="mt-0.5 block text-[10px] text-white/45">{page.url}</span>
+                          <span className="mt-0.5 block text-[10px] text-slate-400">{page.url}</span>
                         </button>
                       );
                     })}
@@ -920,31 +910,36 @@ function FacebookAds() {
               ) : null}
 
               {selectedPageUrls.length ? (
-                <p className="text-xs text-emerald-200">
+                <p className="text-xs font-medium text-[#047857]">
                   Searching {selectedPageUrls.length} selected page{selectedPageUrls.length === 1 ? '' : 's'} with Apify.
                 </p>
               ) : null}
             </div>
           )}
         </div>
-
-        {activeSource.helper ? (
-          <p className="text-xs text-white/55">
-            <span className="font-semibold text-white/80">{activeSource.label}</span> {activeSource.helper}
-          </p>
-        ) : null}
-
-        {!hasProAccess && isAdSource ? (
-          <div className="rounded-sm border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-            Pro unlocks research brief, competitor search, and AI-assisted keyword expansion.
+        ) : (
+          <div className="flex items-center justify-between gap-3 border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            <span className="truncate">Current search: <span className="font-semibold text-slate-900">{seedQuery || keyword}</span></span>
             <button
               type="button"
-              onClick={() => navigate('/billing?checkoutPlan=pro')}
-              className="ml-2 font-semibold text-white underline underline-offset-2"
+              onClick={() => {
+                setResults([]);
+                setCompetitors([]);
+                setSeedQuery('');
+                setSaveStatus('');
+                setSelectedAd(null);
+              }}
+              className="shrink-0 font-semibold text-[#047857] hover:text-[#10b981]"
             >
-              Upgrade to Pro
+              New search
             </button>
           </div>
+        )}
+
+        {activeSource.helper ? (
+          <p className="text-xs text-slate-500">
+            <span className="font-semibold text-slate-700">{activeSource.label}</span> {activeSource.helper}
+          </p>
         ) : null}
 
       </form>
@@ -954,24 +949,24 @@ function FacebookAds() {
       ) : (
         <>
       {searchNotice ? (
-        <div className="rounded-sm border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+        <div className="rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           {searchNotice}
         </div>
       ) : null}
 
       {searchPlan && !results.length ? (
-        <div className="rounded-sm border [border-color:var(--app-border)] bg-[#0d1711] p-3">
+        <div className="rounded-sm border border-[#10b981]/20 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.18em] text-[#25d366]">
             <SearchSparkIcon />
             Intelligent Search
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-white/55">Searching for</span>
-            <span className="rounded-sm bg-[#25d366] px-2 py-1 text-sm font-semibold text-black">
+            <span className="text-xs text-slate-500">Searching for</span>
+            <span className="rounded-full bg-[#10b981] px-3 py-1 text-sm font-semibold text-white">
               {searchPlan.query}
             </span>
             {searchPlan.search_mode ? (
-              <span className="rounded-sm border border-white/10 px-2 py-1 text-[11px] text-white/70">
+              <span className="rounded-full border border-slate-200 px-3 py-1 text-[11px] text-slate-600">
                 {searchPlan.search_mode}
               </span>
             ) : null}
@@ -983,7 +978,7 @@ function FacebookAds() {
                   key={item}
                   type="button"
                   onClick={() => setKeyword(item)}
-                  className="rounded-sm border border-white/10 px-2 py-1 text-xs text-white/72 transition hover:border-[#25d366] hover:text-white"
+                  className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700 transition hover:border-[#10b981] hover:bg-[#10b981]/10"
                 >
                   {item}
                 </button>
@@ -992,14 +987,14 @@ function FacebookAds() {
           ) : null}
           {Array.isArray(searchPlan.competitor_keywords) && searchPlan.competitor_keywords.length ? (
             <div className="mt-3 space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-white/45">Competitor Leads</p>
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Competitor Leads</p>
               <div className="flex flex-wrap gap-2">
                 {searchPlan.competitor_keywords.slice(0, 5).map((item) => (
                   <button
                     key={item}
                     type="button"
                     onClick={() => setKeyword(item)}
-                    className="rounded-sm border border-white/10 px-2 py-1 text-xs text-white/72 transition hover:border-[#25d366] hover:text-white"
+                    className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700 transition hover:border-[#10b981] hover:bg-[#10b981]/10"
                   >
                     {item}
                   </button>
@@ -1009,7 +1004,7 @@ function FacebookAds() {
           ) : null}
           {Array.isArray(searchPlan.advertiser_page_urls) && searchPlan.advertiser_page_urls.length ? (
             <div className="mt-3 space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-white/45">Advertiser page targets</p>
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Advertiser page targets</p>
               <div className="flex flex-wrap gap-2">
                 {searchPlan.advertiser_page_urls.map((item) => (
                   <a
@@ -1017,7 +1012,7 @@ function FacebookAds() {
                     href={item}
                     target="_blank"
                     rel="noreferrer"
-                    className="rounded-sm border border-white/10 px-2 py-1 text-xs text-white/72 transition hover:border-[#25d366] hover:text-white"
+                    className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700 transition hover:border-[#10b981] hover:bg-[#10b981]/10"
                   >
                     {item}
                   </a>
@@ -1027,41 +1022,41 @@ function FacebookAds() {
           ) : null}
           {Array.isArray(searchPlan.task_runs) && searchPlan.task_runs.length ? (
             <div className="mt-3 space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-white/45">Executed search targets</p>
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Executed search targets</p>
               <div className="flex flex-wrap gap-2">
                 {searchPlan.task_runs.map((item) => (
-                  <span key={`${item.target_type}-${item.target}`} className="rounded-sm border border-white/10 px-2 py-1 text-xs text-white/72">
+                  <span key={`${item.target_type}-${item.target}`} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700">
                     {item.target}
                   </span>
                 ))}
               </div>
             </div>
           ) : null}
-          {searchPlan.rationale ? <p className="mt-3 text-xs text-white/58">{searchPlan.rationale}</p> : null}
+          {searchPlan.rationale ? <p className="mt-3 text-xs text-slate-500">{searchPlan.rationale}</p> : null}
         </div>
       ) : null}
 
       {researchSummary && !results.length ? (
         <div className="grid gap-3 md:grid-cols-4">
-          <div className="rounded-sm app-card p-3">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-white/45">Ads surfaced</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{researchSummary.total_ads || 0}</p>
+          <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Ads surfaced</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950">{researchSummary.total_ads || 0}</p>
           </div>
-          <div className="rounded-sm app-card p-3">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-white/45">Advertisers</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{researchSummary.advertiser_count || 0}</p>
+          <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Advertisers</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950">{researchSummary.advertiser_count || 0}</p>
           </div>
-          <div className="rounded-sm app-card p-3">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-white/45">Task runs</p>
-            <p className="mt-2 text-2xl font-semibold text-white">{researchSummary.task_count || 0}</p>
+          <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Task runs</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-950">{researchSummary.task_count || 0}</p>
           </div>
-          <div className="rounded-sm app-card p-3">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-white/45">Best format mix</p>
-            <p className="mt-2 text-sm text-white">
+          <div className="rounded-sm border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">Best format mix</p>
+            <p className="mt-2 text-sm font-semibold text-slate-950">
               {facets?.formats?.video || 0} video / {facets?.formats?.image || 0} static
             </p>
             {typeof researchSummary.discarded_low_relevance === 'number' ? (
-              <p className="mt-2 text-[11px] text-white/45">
+              <p className="mt-2 text-[11px] text-slate-500">
                 Filtered out {researchSummary.discarded_low_relevance} low-relevance ads
               </p>
             ) : null}
@@ -1070,19 +1065,19 @@ function FacebookAds() {
       ) : null}
 
       {isAdSource && results.length > 0 ? (
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-          <aside className="w-full shrink-0 lg:sticky lg:top-0 lg:w-1/3 lg:max-w-sm lg:self-start">
-            <div className="flex max-h-[calc(100dvh-6rem)] flex-col rounded-sm border [border-color:var(--app-border)] app-card p-4">
+        <div className="space-y-3">
+          <aside className="hidden">
+            <div className="flex max-h-[calc(100dvh-6rem)] flex-col rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-[11px] uppercase tracking-[0.14em] text-white/45">Advertisers</p>
+                  <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Advertisers</p>
                   {seedQuery ? (
-                    <p className="mt-1 line-clamp-2 text-xs text-white/60">
+                    <p className="mt-1 line-clamp-2 text-xs text-slate-500">
                       &ldquo;{seedQuery}&rdquo;
                     </p>
                   ) : null}
                 </div>
-                <span className="shrink-0 rounded-sm border border-white/10 px-2 py-1 text-[11px] text-white/60">
+                <span className="shrink-0 rounded-full border border-slate-200 px-3 py-1 text-[11px] text-slate-500">
                   {sidebarAdvertisers.length}
                 </span>
               </div>
@@ -1093,8 +1088,8 @@ function FacebookAds() {
                 onClick={handleClearAdvertiserFocus}
                 className={`mt-4 w-full rounded-sm border px-3 py-2 text-left text-xs font-semibold transition disabled:opacity-50 ${
                   !selectedCompetitor
-                    ? 'border-[#25d366] bg-[#25d366]/15 text-white'
-                    : 'border-white/10 text-white/80 hover:bg-white/5'
+                    ? 'border-[#10b981] bg-[#10b981]/10 text-[#047857]'
+                    : 'border-slate-200 text-slate-700 hover:bg-slate-50'
                 }`}
               >
                 All advertisers
@@ -1111,23 +1106,23 @@ function FacebookAds() {
                       key={`${c.page_id || 'nopage'}-${c.name}`}
                       type="button"
                       onClick={() => handleCompetitorSelect(c)}
-                      className={`flex w-full items-start gap-3 rounded-sm border px-3 py-3 text-left transition hover:bg-white/[0.03] ${
+                      className={`flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition ${
                         isSelected
-                          ? 'border-[#25d366] bg-[#25d366]/10'
-                          : 'border-white/10 hover:border-white/20'
+                          ? 'border-[#10b981] bg-[#10b981]/10'
+                          : 'border-slate-200 hover:border-[#10b981]/30 hover:bg-slate-50'
                       }`}
                     >
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1877f2]/25 text-xs font-bold text-[#8ab4ff]">
                         {String(c.name).slice(0, 1).toUpperCase()}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="line-clamp-2 text-sm font-semibold text-white">{c.name}</span>
-                        <span className="mt-1 block text-[11px] text-white/50">
+                        <span className="line-clamp-2 text-sm font-semibold text-slate-950">{c.name}</span>
+                        <span className="mt-1 block text-[11px] text-slate-500">
                           {c.count} ad{c.count === 1 ? '' : 's'}
                           {c.from_plan ? ' · from plan' : ''}
                         </span>
                         {c.page_id ? (
-                          <span className="mt-1 block font-mono text-[10px] text-white/35">Page {c.page_id}</span>
+                          <span className="mt-1 block font-mono text-[10px] text-slate-400">Page {c.page_id}</span>
                         ) : null}
                       </span>
                     </button>
@@ -1137,16 +1132,16 @@ function FacebookAds() {
             </div>
           </aside>
 
-          <div className="min-w-0 flex-1 space-y-3">
+          <div className="space-y-3">
             {selectedCompetitor ? (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-[#25d366]/25 bg-[#25d366]/10 px-3 py-2 text-sm text-white/85">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-[#10b981]/25 bg-[#10b981]/10 px-4 py-3 text-sm text-slate-700">
                 <p>
-                  Ads for <span className="font-semibold text-white">{selectedCompetitor.name}</span>
+                  Ads for <span className="font-semibold text-slate-950">{selectedCompetitor.name}</span>
                 </p>
                 <button
                   type="button"
                   onClick={handleClearAdvertiserFocus}
-                  className="shrink-0 rounded-sm border border-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10"
+                  className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   Clear
                 </button>
@@ -1154,37 +1149,57 @@ function FacebookAds() {
             ) : null}
 
             {searchNotice ? (
-              <div className="rounded-sm border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+              <div className="rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 {searchNotice}
               </div>
             ) : null}
 
             {sortBy === 'longest_running' ? (
-              <div className="rounded-sm border border-emerald-400/25 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-100">
+              <div className="rounded-sm border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
                 Ranked by run-time — longevity is the closest signal Meta gives you for a proven winner.
               </div>
             ) : null}
 
             {sortBy === 'best_impressions' ? (
-              <div className="rounded-sm border border-sky-400/25 bg-sky-400/10 px-3 py-2 text-sm text-sky-100">
+              <div className="rounded-sm border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
                 Ranked by impressions when Meta exposes them. Many ads hide exact reach — we use index buckets when available.
               </div>
             ) : null}
 
-            <div className="flex flex-wrap items-center gap-2 rounded-sm border [border-color:var(--app-border)] app-card p-3">
+            <div className="flex flex-nowrap items-center gap-2 overflow-x-auto border border-slate-200 bg-white p-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {hasPaidPlan ? (
                 <button
                   type="button"
                   onClick={handleSaveCollection}
-                  className="rounded-sm bg-[#7c3aed] px-4 py-2 text-sm font-semibold text-white"
+                  className="h-10 shrink-0 rounded-sm bg-[#10b981] px-4 text-sm font-semibold text-white hover:bg-[#059669]"
                 >
                   Save Results
                 </button>
               ) : null}
               <select
+                value={advertiserFilter}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setAdvertiserFilter(value);
+                  setSelectedCompetitor(
+                    value === 'all'
+                      ? null
+                      : sidebarAdvertisers.find((item) => getAdvertiserFilterValue(item) === value) || null
+                  );
+                }}
+                className="h-10 w-[13rem] shrink-0 rounded-sm border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none focus:border-[#10b981]"
+              >
+                <option value="all">All advertisers</option>
+                {sidebarAdvertisers.map((item) => (
+                  <option key={`${item.page_id || 'nopage'}-${item.name}`} value={getAdvertiserFilterValue(item)}>
+                    {item.name} ({item.count})
+                  </option>
+                ))}
+              </select>
+              <select
                 value={sortBy}
                 onChange={(event) => setSortBy(event.target.value)}
-                className="rounded-sm app-input px-3 py-2 text-sm"
+                className="h-10 w-[12rem] shrink-0 rounded-sm border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none focus:border-[#10b981]"
               >
                 <option value="longest_running">Longest running</option>
                 <option value="best_impressions">Best impressions</option>
@@ -1196,7 +1211,7 @@ function FacebookAds() {
               <select
                 value={resultFilter}
                 onChange={(event) => setResultFilter(event.target.value)}
-                className="rounded-sm app-input px-3 py-2 text-sm"
+                className="h-10 w-[10rem] shrink-0 rounded-sm border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none focus:border-[#10b981]"
               >
                 <option value="all">All formats</option>
                 <option value="video">Video only</option>
@@ -1207,7 +1222,7 @@ function FacebookAds() {
               <select
                 value={ctaFilter}
                 onChange={(event) => setCtaFilter(event.target.value)}
-                className="rounded-sm app-input px-3 py-2 text-sm"
+                className="h-10 w-[10rem] shrink-0 rounded-sm border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none focus:border-[#10b981]"
               >
                 <option value="all">All CTAs</option>
                 {ctaOptions.map((item) => (
@@ -1217,24 +1232,24 @@ function FacebookAds() {
               <select
                 value={platformFilter}
                 onChange={(event) => setPlatformFilter(event.target.value)}
-                className="rounded-sm app-input px-3 py-2 text-sm"
+                className="h-10 w-[10rem] shrink-0 rounded-sm border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none focus:border-[#10b981]"
               >
                 <option value="all">All platforms</option>
                 {platformOptions.map((item) => (
                   <option key={item} value={item}>{item}</option>
                 ))}
               </select>
-              <p className="text-xs text-white/60">
+              <p className="shrink-0 text-xs text-slate-500">
                 {filteredResults.length} shown
                 {filteredResults.length < results.length ? (
-                  <span className="text-white/40"> / {results.length}</span>
+                  <span className="text-slate-400"> / {results.length}</span>
                 ) : null}
               </p>
-              {saveStatus ? <p className="text-xs text-white/70">{saveStatus}</p> : null}
+              {saveStatus ? <p className="text-xs font-medium text-[#047857]">{saveStatus}</p> : null}
             </div>
 
             {filteredResults.length === 0 ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-sm border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 <p>
                   Filters are hiding all {results.length} result{results.length === 1 ? '' : 's'}.
                 </p>
@@ -1248,15 +1263,15 @@ function FacebookAds() {
                     setSortBy(isAdSource ? SPY_DEFAULT_SORT : 'best_match');
                     setSelectedCompetitor(null);
                   }}
-                  className="shrink-0 rounded-sm bg-[#25d366] px-3 py-2 text-xs font-semibold text-black"
+                  className="shrink-0 rounded-sm bg-[#10b981] px-3 py-2 text-xs font-semibold text-white"
                 >
                   Reset filters
                 </button>
               </div>
             ) : (
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 {filteredResults.map((item) => (
-                  <FacebookResultCard key={item.id} item={item} navigate={navigate} />
+                  <FacebookResultCard key={item.id} item={item} navigate={navigate} onView={setSelectedAd} />
                 ))}
               </div>
             )}
@@ -1268,29 +1283,40 @@ function FacebookAds() {
             <select
               value={sortBy}
               onChange={(event) => setSortBy(event.target.value)}
-              className="rounded-sm app-input px-3 py-2 text-sm"
+              className="rounded-sm border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm outline-none focus:border-[#10b981]"
             >
               <option value="best_match">Best match</option>
               <option value="newest">Newest first</option>
             </select>
           </div>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {filteredResults.map((item) => (
-              <FacebookResultCard key={item.id} item={item} navigate={navigate} />
+              <FacebookResultCard key={item.id} item={item} navigate={navigate} onView={setSelectedAd} />
             ))}
           </div>
         </div>
       ) : null}
 
       {!results.length && !isLoading && (
-        <div className="grid min-h-[52vh] place-items-center">
-          <div className="flex max-w-sm flex-col items-center text-center">
+        <div className="grid min-h-[46vh] place-items-center rounded-sm border border-dashed border-slate-200 bg-white/70">
+          <div className="flex max-w-sm flex-col items-center p-8 text-center">
             <EmptyFacebookIcon />
-            <p className="mt-8 text-3xl font-semibold text-white">Search to get started</p>
-            <p className="mt-2 text-sm text-white/55">{activeSource.empty}</p>
+            <p className="mt-6 text-2xl font-semibold text-slate-950">Search to get started</p>
+            <p className="mt-2 text-sm text-slate-500">{activeSource.empty}</p>
           </div>
         </div>
       )}
+
+      {selectedAd ? (
+        <FacebookAdDetailModal
+          item={selectedAd}
+          onClose={() => setSelectedAd(null)}
+          onGenerate={() => {
+            saveBulkCreativeIntel(buildIntelFromFacebookAd(selectedAd));
+            navigate('/facebook/hook-generator');
+          }}
+        />
+      ) : null}
 
         </>
       )}
@@ -1378,7 +1404,7 @@ function resolveFacebookAdCreativeMedia(item) {
   };
 }
 
-function FacebookAdResultCard({ item, navigate }) {
+function FacebookAdResultCard({ item, navigate, onView }) {
   const media = useMemo(() => resolveFacebookAdCreativeMedia(item), [item]);
   const longevityDays = useMemo(() => computeAdLongevityDays(item), [item]);
   const [posterFailed, setPosterFailed] = useState(false);
@@ -1392,13 +1418,12 @@ function FacebookAdResultCard({ item, navigate }) {
   }, [item.id, media.posterUrl, media.videoUrl]);
 
   const showPoster = Boolean(media.posterUrl) && !posterFailed;
-  const showVideoPlayer =
-    Boolean(media.videoUrl) && !videoFailed && (playVideo || (!showPoster && media.videoUrl));
-  const showPlayOverlay = showPoster && Boolean(media.videoUrl) && !playVideo;
+  const showVideoPlayer = Boolean(media.videoUrl) && !videoFailed;
+  const showPlayOverlay = false;
 
   return (
-    <article className="rounded-sm app-card p-4">
-      <div className="relative min-h-[18rem] w-full overflow-hidden rounded-sm bg-black/40 md:min-h-[22rem]">
+    <article className="rounded-sm border border-slate-200 bg-white p-4 text-slate-900 shadow-sm">
+      <div className="relative min-h-[12rem] w-full overflow-hidden rounded-sm bg-slate-100 md:min-h-[15rem] xl:min-h-[12rem] 2xl:min-h-[14rem]">
         {showVideoPlayer ? (
           <video
             key={media.videoUrl}
@@ -1441,21 +1466,9 @@ function FacebookAdResultCard({ item, navigate }) {
           </button>
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-3 text-center">
-            <p className="text-xs text-white/60">
-              {posterFailed || videoFailed
-                ? 'Preview blocked by Facebook CDN. Open the Ad Library page for this creative.'
-                : 'No preview image in this row.'}
+            <p className="text-xs text-slate-500">
+              {posterFailed || videoFailed ? 'Preview blocked by Facebook CDN.' : 'No preview image in this row.'}
             </p>
-            {media.snapshotUrl ? (
-              <a
-                href={media.snapshotUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-sm border border-white/20 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/10"
-              >
-                Open Ad Library
-              </a>
-            ) : null}
           </div>
         )}
       </div>
@@ -1464,23 +1477,23 @@ function FacebookAdResultCard({ item, navigate }) {
       <p className="mt-1 text-xs app-muted">{item.page_id ? `Page ID: ${item.page_id}` : item.subtitle || 'N/A'}</p>
       <div className="mt-2 flex flex-wrap gap-2">
         {(item.publisher_platforms || []).length ? item.publisher_platforms.map((platform) => (
-          <span key={platform} className="rounded-sm border border-white/10 px-2 py-1 text-[11px] text-white/65">
+          <span key={platform} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-600">
             {platform.replace(/_/g, ' ')}
           </span>
         )) : <span className="text-xs app-muted">Platforms unavailable</span>}
         {media.isVideo ? (
-          <span className="rounded-sm bg-emerald-400/15 px-2 py-1 text-[11px] text-emerald-300">Video</span>
+          <span className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] text-emerald-700">Video</span>
         ) : null}
         {!media.isVideo && media.posterUrl ? (
-          <span className="rounded-sm bg-sky-400/15 px-2 py-1 text-[11px] text-sky-300">Static</span>
+          <span className="rounded-full bg-sky-100 px-2 py-1 text-[11px] text-sky-700">Static</span>
         ) : null}
         {item.impressions_text || (typeof item.impressions === 'string' && item.impressions) ? (
-          <span className="rounded-sm bg-violet-400/15 px-2 py-1 text-[11px] text-violet-200">
+          <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] text-violet-700">
             {item.impressions_text || item.impressions}
           </span>
         ) : null}
         {longevityDays > 0 ? (
-          <span className="rounded-sm bg-amber-400/15 px-2 py-1 text-[11px] text-amber-200">
+          <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] text-amber-700">
             {longevityDays} day{longevityDays === 1 ? '' : 's'} live
           </span>
         ) : null}
@@ -1489,15 +1502,15 @@ function FacebookAdResultCard({ item, navigate }) {
         Started: {item.ad_delivery_start_time || item.ad_creation_time || 'N/A'}
       </p>
       {item.search_target ? (
-        <p className="mt-1 text-[11px] text-white/45">Search target: {item.search_target}</p>
+        <p className="mt-1 text-[11px] text-slate-500">Search target: {item.search_target}</p>
       ) : null}
       {typeof item.relevance_score === 'number' ? (
-        <p className="mt-1 text-[11px] text-white/45">Relevance: {item.relevance_score.toFixed(2)}</p>
+        <p className="mt-1 text-[11px] text-slate-500">Relevance: {item.relevance_score.toFixed(2)}</p>
       ) : null}
       {item.matched_terms?.length ? (
         <div className="mt-2 flex flex-wrap gap-2">
           {item.matched_terms.slice(0, 3).map((term) => (
-            <span key={term} className="rounded-sm border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[11px] text-emerald-200">
+            <span key={term} className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-700">
               matched: {term}
             </span>
           ))}
@@ -1522,21 +1535,30 @@ function FacebookAdResultCard({ item, navigate }) {
       )}
 
       {!!item.call_to_action_types?.length && (
-        <p className="mt-2 text-xs text-white/72">CTA: {item.call_to_action_types[0]}</p>
+        <p className="mt-2 text-xs text-slate-700">CTA: {item.call_to_action_types[0]}</p>
       )}
 
       {(item.age_from || item.age_until || item.gender || item.delivery_country) ? (
-        <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/55">
+        <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
           {item.age_from || item.age_until ? <span>Age: {item.age_from || '?'}-{item.age_until || '?'}</span> : null}
           {item.gender ? <span>Gender: {item.gender}</span> : null}
           {item.delivery_country ? <span>Country: {item.delivery_country}</span> : null}
         </div>
       ) : null}
       {item.query_params ? (
-        <p className="mt-2 line-clamp-2 text-[11px] text-white/40">Query params: {item.query_params}</p>
+        <p className="mt-2 line-clamp-2 text-[11px] text-slate-400">Query params: {item.query_params}</p>
       ) : null}
 
       <div className="mt-3 flex flex-wrap gap-2">
+        {onView ? (
+          <button
+            type="button"
+            onClick={() => onView(item)}
+            className="rounded-sm border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            View
+          </button>
+        ) : null}
         {navigate ? (
           <button
             type="button"
@@ -1544,47 +1566,27 @@ function FacebookAdResultCard({ item, navigate }) {
               saveBulkCreativeIntel(buildIntelFromFacebookAd(item));
               navigate('/facebook/hook-generator');
             }}
-            className="rounded-sm border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-400/20"
+            className="rounded-sm border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
           >
             20 variations from this ad
           </button>
-        ) : null}
-        {media.snapshotUrl ? (
-          <a
-            href={media.snapshotUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-sm border [border-color:var(--app-border)] px-2.5 py-1 text-xs font-semibold app-muted"
-          >
-            Open Ad Library
-          </a>
-        ) : null}
-        {item.page_url ? (
-          <a
-            href={item.page_url}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-sm border [border-color:var(--app-border)] px-2.5 py-1 text-xs font-semibold app-muted"
-          >
-            Open Page
-          </a>
         ) : null}
       </div>
     </article>
   );
 }
 
-function FacebookResultCard({ item, navigate }) {
+function FacebookResultCard({ item, navigate, onView }) {
   if (item.kind === 'group') {
     return (
-      <article className="rounded-sm app-card p-4">
+      <article className="rounded-sm border border-slate-200 bg-white p-4 text-slate-900 shadow-sm">
         {item.image_url ? (
           <img src={item.image_url} alt={item.title} className="h-40 w-full rounded-sm object-cover" />
         ) : null}
         <h3 className="mt-3 line-clamp-2 text-sm font-semibold">{item.title}</h3>
-        {item.subtitle ? <p className="mt-1 text-xs app-muted">{item.subtitle}</p> : null}
+        {item.subtitle ? <p className="mt-1 text-xs text-slate-500">{item.subtitle}</p> : null}
         {item.description ? <p className="mt-3 line-clamp-4 text-sm">{item.description}</p> : null}
-        <div className="mt-3 flex flex-wrap gap-2 text-xs app-muted">
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
           {item.members ? <span>Members: {item.members}</span> : null}
           {item.privacy ? <span>{item.privacy}</span> : null}
           {item.activity ? <span>{item.activity}</span> : null}
@@ -1595,7 +1597,7 @@ function FacebookResultCard({ item, navigate }) {
               href={item.external_url}
               target="_blank"
               rel="noreferrer"
-              className="rounded-sm border [border-color:var(--app-border)] px-2.5 py-1 text-xs font-semibold app-muted"
+              className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
             >
               Open Group
             </a>
@@ -1607,17 +1609,17 @@ function FacebookResultCard({ item, navigate }) {
 
   if (item.kind === 'profile') {
     return (
-      <article className="rounded-sm app-card p-4">
+      <article className="rounded-sm border border-slate-200 bg-white p-4 text-slate-900 shadow-sm">
         <div className="flex items-center gap-3">
           {item.image_url ? (
             <img src={item.image_url} alt={item.title} className="h-14 w-14 rounded-full object-cover" />
           ) : (
-            <div className="h-14 w-14 rounded-full bg-white/10" />
+            <div className="h-14 w-14 rounded-full bg-slate-100" />
           )}
           <div className="min-w-0">
             <h3 className="truncate text-sm font-semibold">{item.title}</h3>
-            {item.subtitle ? <p className="mt-1 text-xs app-muted">{item.subtitle}</p> : null}
-            {item.follow_type ? <p className="mt-1 text-xs app-muted">Type: {item.follow_type}</p> : null}
+            {item.subtitle ? <p className="mt-1 text-xs text-slate-500">{item.subtitle}</p> : null}
+            {item.follow_type ? <p className="mt-1 text-xs text-slate-500">Type: {item.follow_type}</p> : null}
           </div>
         </div>
         {item.external_url ? (
@@ -1626,7 +1628,7 @@ function FacebookResultCard({ item, navigate }) {
               href={item.external_url}
               target="_blank"
               rel="noreferrer"
-              className="rounded-sm border [border-color:var(--app-border)] px-2.5 py-1 text-xs font-semibold app-muted"
+              className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
             >
               Open Profile
             </a>
@@ -1636,7 +1638,107 @@ function FacebookResultCard({ item, navigate }) {
     );
   }
 
-  return <FacebookAdResultCard item={item} navigate={navigate} />;
+  return <FacebookAdResultCard item={item} navigate={navigate} onView={onView} />;
+}
+
+function FacebookAdDetailModal({ item, onClose, onGenerate }) {
+  const media = resolveFacebookAdCreativeMedia(item);
+  const title = item.ad_creative_link_titles?.[0] || item.title || item.page_name || 'Facebook ad';
+  const body = item.ad_creative_bodies?.[0] || item.captions?.[0] || item.description || '';
+  const description = item.ad_creative_link_descriptions?.[0] || item.ad_creative_link_captions?.[0] || '';
+  const cta = item.call_to_action_types?.[0] || 'N/A';
+  const platforms = item.publisher_platforms?.length ? item.publisher_platforms.join(', ').replace(/_/g, ' ') : 'N/A';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="max-h-[90dvh] w-full max-w-5xl overflow-y-auto rounded-sm bg-white text-slate-900 shadow-2xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-[#047857]">Ad details</p>
+            <h2 className="truncate text-lg font-bold">{item.page_name || 'Unknown advertiser'}</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid h-10 w-10 place-items-center rounded-sm bg-red-600 text-xl font-black text-white hover:bg-red-700"
+            aria-label="Close ad details"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className="overflow-hidden rounded-sm border border-slate-200 bg-slate-50">
+            {media.videoUrl ? (
+              <video
+                src={media.videoUrl}
+                poster={media.posterUrl || undefined}
+                className="max-h-[32rem] w-full object-contain"
+                controls
+                playsInline
+                preload="metadata"
+              />
+            ) : media.posterUrl ? (
+              <img
+                src={media.posterUrl}
+                alt={title}
+                className="max-h-[32rem] w-full object-contain"
+              />
+            ) : (
+              <div className="grid min-h-80 place-items-center text-sm text-slate-500">No creative preview available.</div>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Headline</p>
+              <p className="mt-1 text-xl font-bold">{title}</p>
+            </div>
+
+            {body ? (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Primary text</p>
+                <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{body}</p>
+              </div>
+            ) : null}
+
+            {description ? (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Description</p>
+                <p className="mt-1 text-sm leading-6 text-slate-700">{description}</p>
+              </div>
+            ) : null}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <DetailPill label="CTA" value={cta} />
+              <DetailPill label="Platforms" value={platforms} />
+              <DetailPill label="Started" value={item.ad_delivery_start_time || item.ad_creation_time || 'N/A'} />
+              <DetailPill label="Country" value={item.delivery_country || 'N/A'} />
+              <DetailPill label="Page ID" value={item.page_id || 'N/A'} />
+              <DetailPill label="Format" value={media.isVideo ? 'Video' : media.posterUrl ? 'Static' : 'Unknown'} />
+            </div>
+
+            <button
+              type="button"
+              onClick={onGenerate}
+              className="w-full rounded-sm bg-[#10b981] px-4 py-3 text-sm font-bold text-white hover:bg-[#059669]"
+            >
+              Generate variations from this ad
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailPill({ label, value }) {
+  return (
+    <div className="rounded-sm border border-slate-200 bg-slate-50 px-3 py-2">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="mt-1 break-words text-sm font-semibold text-slate-800">{value}</p>
+    </div>
+  );
 }
 
 function EmptyFacebookIcon() {

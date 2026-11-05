@@ -38,7 +38,7 @@ function InstagramAds() {
   const location = useLocation();
   const navigate = useNavigate();
   const { getToken } = useAuth();
-  const { subscription } = useBilling();
+  const { subscription, can } = useBilling();
   const { notifyApiError, showWarning } = useApiToast();
   const [query, setQuery] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -63,9 +63,9 @@ function InstagramAds() {
   const [savedWorkspaceUrls, setSavedWorkspaceUrls] = useState(() => new Set());
   const source = location.pathname.includes('/instagram/reels') ? 'reels' : 'profile_posts';
   const activeSource = INSTAGRAM_SOURCES.find((option) => option.id === source) || INSTAGRAM_SOURCES[0];
-  const hasProAccess = Boolean(subscription?.is_pro);
-  const hasPaidPlan = Boolean(subscription?.is_active);
-  const limitOptions = hasPaidPlan ? [12, 24, 48, 72, 96] : [FREE_RESULT_LIMIT];
+  const hasProAccess = true;
+  const hasPaidPlan = true;
+  const limitOptions = [12, 24, 48, 72, 96];
   const filteredWorkspaceFolders = useMemo(() => {
     const q = workspaceSearch.trim().toLowerCase();
     if (!q) return workspaceFolders;
@@ -73,19 +73,9 @@ function InstagramAds() {
   }, [workspaceFolders, workspaceSearch]);
   const sortedResults = useMemo(() => sortInstagramResults(results, sortBy), [results, sortBy]);
 
-  useEffect(() => {
-    if (!hasPaidPlan && limit !== FREE_RESULT_LIMIT) {
-      setLimit(FREE_RESULT_LIMIT);
-    }
-  }, [hasPaidPlan, limit]);
-
   const runSearch = async (event) => {
     event.preventDefault();
     if (!(query || prompt).trim()) return;
-    if (intelligent && !hasProAccess) {
-      navigate('/billing?checkoutPlan=pro');
-      return;
-    }
 
     setIsSearching(true);
 
@@ -322,30 +312,6 @@ function InstagramAds() {
             {isSearching ? 'Searching...' : source === 'reels' ? 'Search Reels' : 'Search'}
           </button>
         </div>
-
-        {!hasPaidPlan ? (
-          <div className="rounded-sm border border-sky-500/25 bg-sky-500/10 p-3 text-xs text-sky-100">
-            Free plan: 5 Instagram searches per month, 8 results per search, 1 workspace folder, 2 saved items, and 1 analysis preview.
-            <button
-              type="button"
-              onClick={() => navigate('/billing?checkoutPlan=starter')}
-              className="ml-2 font-semibold text-white underline underline-offset-2"
-            >
-              Upgrade for more
-            </button>
-          </div>
-        ) : !hasProAccess ? (
-          <div className="rounded-sm border border-amber-500/25 bg-amber-500/10 p-3 text-xs text-amber-200">
-            Pro unlocks intelligent profile expansion on Instagram.
-            <button
-              type="button"
-              onClick={() => navigate('/billing?checkoutPlan=pro')}
-              className="ml-2 font-semibold text-white underline underline-offset-2"
-            >
-              Upgrade to Pro
-            </button>
-          </div>
-        ) : null}
 
         {intelligent ? (
           <div className="rounded-sm border p-4" style={{ borderColor: 'var(--app-border)', background: 'var(--app-panel-2)' }}>
