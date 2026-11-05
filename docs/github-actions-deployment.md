@@ -17,10 +17,14 @@ main         -> CI checks -> production deployment
 
 Create a GitHub Environment named `production`. Add these environment secrets:
 
-- `DEPLOY_WEBHOOK_URL`: deployment webhook from the hosting provider or deployment server.
+- `VPS_HOST`: VPS IP address or hostname.
+- `VPS_PORT`: SSH port, normally `22`.
+- `VPS_USER`: dedicated deployment user, such as `deploy`.
+- `VPS_SSH_KEY`: private SSH key whose public key is authorized on the VPS.
+- `VPS_APP_PATH`: absolute repository path on the VPS, such as `/var/www/viraladlibrary`.
 - `PRODUCTION_HEALTHCHECK_URL`: public API health endpoint, for example `https://api.example.com/health`.
 
-`DEPLOY_WEBHOOK_URL` is intentionally provider-neutral. It prevents deployment credentials from being committed and lets us connect Render, Railway, Fly.io, a VPS, or a custom deployment service later without changing the CI workflow.
+The deployment uses SSH directly. GitHub connects to the VPS, pulls the tested `main` commit, installs dependencies, builds the client and admin applications, and restarts the Node server through PM2.
 
 ## What the workflow does
 
@@ -30,7 +34,7 @@ Create a GitHub Environment named `production`. Add these environment secrets:
 4. Validates the Node server entrypoint.
 5. Packages the tested client, admin, and server artifacts.
 6. Uploads a 14-day GitHub release artifact.
-7. Triggers the configured hosting deployment.
+7. Connects to the VPS over SSH and deploys the tested commit.
 8. Polls the configured health endpoint and fails if the deployment is unhealthy.
 
 If the deployment secret is not configured yet, CI remains usable and the deploy workflow records that it created an artifact without triggering hosting.
